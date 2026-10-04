@@ -1,0 +1,110 @@
+# ============================================================
+# ETAPA 1: BUILD
+# ============================================================
+# Utilizamos Java 21 con JDK porque necesitamos compilar
+# nuestro proyecto Spring Boot.
+FROM eclipse-temurin:21-jdk AS build
+
+# Directorio de trabajo dentro del contenedor
+WORKDIR /app
+
+
+# ------------------------------------------------------------
+# Copiar archivos necesarios para Maven
+# ------------------------------------------------------------
+
+# Copiamos el archivo de configuración de Maven
+COPY pom.xml .
+
+# Copiamos Maven Wrapper
+COPY mvnw .
+
+# Copiamos la carpeta de configuración del Maven Wrapper
+COPY .mvn .mvn
+
+
+# ------------------------------------------------------------
+# Preparar Maven Wrapper
+# ------------------------------------------------------------
+
+# Damos permisos de ejecución al Maven Wrapper
+RUN chmod +x mvnw
+
+
+# ------------------------------------------------------------
+# Descargar dependencias
+# ------------------------------------------------------------
+
+# Descargamos las dependencias antes de copiar todo el código.
+# Esto permite aprovechar la caché de Docker y acelerar
+# futuras construcciones si el pom.xml no cambia.
+RUN ./mvnw dependency:go-offline -B
+
+
+# ------------------------------------------------------------
+# Copiar código fuente
+# ------------------------------------------------------------
+
+# Copiamos el código fuente de nuestra aplicación
+COPY src src
+
+
+# ------------------------------------------------------------
+# Compilar aplicación
+# ------------------------------------------------------------
+
+# Construimos el proyecto y generamos el archivo .jar.
+#
+# - clean  -> limpia compilaciones anteriores
+# - package -> compila y empaqueta la aplicación
+# - DskipTests -> no ejecuta los tests durante el build
+RUN ./mvnw clean package -DskipTests
+
+
+
+# ============================================================
+# ETAPA 2: RUNTIME
+# ============================================================
+# Aquí utilizamos solamente el JRE porque ya no necesitamos
+# las herramientas de compilación del JDK.
+#
+# Esto hace que la imagen final sea más pequeña.
+FROM eclipse-temurin:21-jre
+
+
+# Directorio de trabajo de la aplicación
+WORKDIR /app
+
+
+# ------------------------------------------------------------
+# Copiar JAR generado
+# ------------------------------------------------------------
+
+# Copiamos el .jar generado en la primera etapa.
+#
+# --from=build indica que el archivo viene de la etapa
+# anterior llamada "build".
+COPY --from=build /app/target/*.jar app.jar
+
+
+# ------------------------------------------------------------
+# Puerto de la aplicación
+# ------------------------------------------------------------
+
+# Indicamos que nuestra aplicación utiliza el puerto 8080.
+#
+# IMPORTANTE:
+# Render puede proporcionar otro puerto mediante la variable
+# de entorno PORT. Por eso Spring Boot debe configurarse para
+# utilizar dicha variable.
+EXPOSE 8080
+
+
+# ------------------------------------------------------------
+# Ejecutar aplicación
+# ------------------------------------------------------------
+
+# Comando que se ejecutará cuando se inicie el contenedor.
+#
+# Ejecuta nuestro archivo JAR con Java.
+ENTRYPOINT ["java", "-jar", "app.jar"]
