@@ -11,7 +11,6 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class Administrador extends Empleado {
 
-    private String contraseña;
     private String permisos;
 
     public void agregarEmpleado() {
