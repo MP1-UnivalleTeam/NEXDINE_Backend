@@ -2,79 +2,54 @@ package com.restaurant.app.controller;
 
 import com.restaurant.app.model.Usuario;
 import com.restaurant.app.services.UserService;
-import com.restaurant.app.services.UserService.SuspendedMarker;
 
 import jakarta.servlet.http.HttpSession;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
-@Controller
+@RestController
 public class AuthController {
 
     @Autowired
     private UserService userService;
 
-    @GetMapping({"/", "/login"})
-    public String mostrarInicioSesion(HttpSession session) {
-
-        if (session.getAttribute("currentUser") != null) {
-            return "redirect:/dashboard";
-        }
-
-        return "login";
-    }
-
     @PostMapping("/login")
-    public String iniciarSesion(@RequestParam String nombre,
-                                @RequestParam String contraseña,
-                                HttpSession session,
-                                Model model) {
+    public ResponseEntity<?> iniciarSesion(
+            @RequestParam String nombre,
+            @RequestParam String contraseña,
+            HttpSession session) {
 
+        // Crea el administrador inicial si todavía no existe.
         userService.initAdmin();
 
-        Optional<Usuario> usuarioOpt =
-                userService.login(nombre, contraseña);
+        Optional<Usuario> usuarioOpt = userService.login(nombre, contraseña);
 
-        if (usuarioOpt.isPresent()) {
-
-            Usuario usuario = usuarioOpt.get();
-
-            if (usuario instanceof SuspendedMarker) {
-
-                model.addAttribute(
-                        "error",
-                        "Usuario suspendido"
-                );
-
-                return "login";
-            }
-
-            session.setAttribute(
-                    "currentUser",
-                    usuario
-            );
-
-            return "redirect:/dashboard";
+        if (usuarioOpt.isEmpty()) {
+            return ResponseEntity.status(401)
+                    .body(Map.of("error", "Credenciales incorrectas"));
         }
 
-        model.addAttribute(
-                "error",
-                "Credenciales incorrectas"
-        );
+        Usuario usuario = usuarioOpt.get();
 
-        return "login";
+        if (usuario instanceof UserService.SuspendedMarker) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "Usuario suspendido"));
+        }
+
+        session.setAttribute("currentUser", usuario);
+
+        return ResponseEntity.ok(usuario);
     }
 
     @GetMapping("/logout")
-    public String cerrarSesion(HttpSession session) {
-
+    public ResponseEntity<?> cerrarSesion(HttpSession session) {
         session.invalidate();
-
-        return "redirect:/login";
+        return ResponseEntity.ok(Map.of("message", "Sesión cerrada correctamente"));
     }
 }

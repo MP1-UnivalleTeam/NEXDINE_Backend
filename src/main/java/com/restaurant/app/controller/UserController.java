@@ -2,173 +2,141 @@ package com.restaurant.app.controller;
 
 import com.restaurant.app.model.Usuario;
 import com.restaurant.app.services.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.lang.NonNull;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.*;
-import jakarta.servlet.http.HttpSession;
-import java.util.List;
 
-@Controller
+import jakarta.servlet.http.HttpSession;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.lang.NonNull;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/users")
 public class UserController {
 
     @Autowired
     private UserService userService;
 
-    @GetMapping("/dashboard")
-    public String mostrarPanel(HttpSession session, Model model) {
+    @GetMapping
+    public ResponseEntity<?> getUsers(HttpSession session) {
+        Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
 
-        Usuario usuarioActual =
-                (Usuario) session.getAttribute("currentUser");
+        if (usuarioActual == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-        if (usuarioActual == null)
-            return "redirect:/login";
-
-        List<Usuario> usuarios =
-                userService.getAllUsers();
-
-        model.addAttribute("currentUser", usuarioActual);
-        model.addAttribute("users", usuarios);
-
-        return "dashboard";
+        return ResponseEntity.ok(userService.getAllUsers());
     }
 
-    @GetMapping("/users")
-    public String verUsuarios(HttpSession session, Model model) {
+    @GetMapping("/search")
+    public ResponseEntity<?> consultarUsuario(
+            @RequestParam @NonNull Long id,
+            HttpSession session) {
 
-        Usuario usuarioActual =
-                (Usuario) session.getAttribute("currentUser");
+        Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
 
-        if (usuarioActual == null)
-            return "redirect:/login";
+        if (usuarioActual == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-        if ("CLIENTE".equals(usuarioActual.getRol()))
-            return "redirect:/dashboard";
-
-        List<Usuario> usuarios =
-                userService.getAllUsers();
-
-        model.addAttribute("users", usuarios);
-        model.addAttribute("currentUser", usuarioActual);
-
-        return "dashboard";
+        return userService.getUserById(id)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    @GetMapping("/users/search")
-    public String consultarUsuario(@RequestParam @NonNull Long id,
-                                   HttpSession session,
-                                   Model model) {
+    @PostMapping("/create")
+    public ResponseEntity<?> agregarUsuario(
+            @RequestParam String nombre,
+            @RequestParam String contraseña,
+            @RequestParam String rol,
+            @RequestParam String celular,
+            @RequestParam String direccion,
+            HttpSession session) {
 
-        Usuario usuarioActual =
-                (Usuario) session.getAttribute("currentUser");
+        Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
 
-        if (usuarioActual == null)
-            return "redirect:/login";
+        if (usuarioActual == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-        userService.getUserById(id)
-                .ifPresent(usuario ->
-                        model.addAttribute("searchedUser", usuario));
+        if (!"ADMINISTRADOR".equals(usuarioActual.getRol())) {
+            return ResponseEntity.status(403).build();
+        }
 
-        model.addAttribute("currentUser", usuarioActual);
-        model.addAttribute("users",
-                userService.getAllUsers());
+        if ("ADMINISTRADOR".equals(rol)) {
+            return ResponseEntity.badRequest()
+                    .body(java.util.Map.of("error", "No se puede crear otro administrador desde este endpoint"));
+        }
 
-        return "dashboard";
-    }
-
-    @PostMapping("/users/create")
-    public String agregarUsuario(@RequestParam String nombre,
-                                 @RequestParam String contraseña,
-                                 @RequestParam String rol,
-                                 @RequestParam String celular,
-                                 @RequestParam String direccion,
-                                 HttpSession session) {
-
-        Usuario usuarioActual =
-                (Usuario) session.getAttribute("currentUser");
-
-        if (usuarioActual == null)
-            return "redirect:/login";
-
-        if (!"ADMINISTRADOR".equals(usuarioActual.getRol()))
-            return "redirect:/dashboard";
-
-        if ("ADMINISTRADOR".equals(rol))
-            return "redirect:/users";
-
-        userService.createUser(
-                nombre,
-                contraseña,
-                rol,
-                celular,
-                direccion
+        return ResponseEntity.ok(
+                userService.createUser(
+                        nombre,
+                        contraseña,
+                        rol,
+                        celular,
+                        direccion
+                )
         );
-
-        return "redirect:/users";
     }
 
-    @PostMapping("/users/edit")
-    public String editarUsuario(@RequestParam @NonNull Long id,
-                                @RequestParam String nombre,
-                                @RequestParam String rol,
-                                @RequestParam String celular,
-                                @RequestParam String direccion,
-                                HttpSession session) {
+    @PostMapping("/edit")
+    public ResponseEntity<?> editarUsuario(
+            @RequestParam @NonNull Long id,
+            @RequestParam String nombre,
+            @RequestParam String rol,
+            @RequestParam String celular,
+            @RequestParam String direccion,
+            HttpSession session) {
 
-        Usuario usuarioActual =
-                (Usuario) session.getAttribute("currentUser");
+        Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
 
-        if (usuarioActual == null)
-            return "redirect:/login";
+        if (usuarioActual == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-        if (!"ADMINISTRADOR".equals(usuarioActual.getRol()))
-            return "redirect:/dashboard";
+        if (!"ADMINISTRADOR".equals(usuarioActual.getRol())) {
+            return ResponseEntity.status(403).build();
+        }
 
-        userService.updateUser(
-                id,
-                nombre,
-                rol,
-                celular,
-                direccion
-        );
-
-        return "redirect:/users";
+        userService.updateUser(id, nombre, rol, celular, direccion);
+        return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/users/delete")
-    public String eliminarUsuario(@RequestParam @NonNull Long id,
-                                  HttpSession session) {
+    @PostMapping("/delete")
+    public ResponseEntity<?> eliminarUsuario(
+            @RequestParam @NonNull Long id,
+            HttpSession session) {
 
-        Usuario usuarioActual =
-                (Usuario) session.getAttribute("currentUser");
+        Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
 
-        if (usuarioActual == null)
-            return "redirect:/login";
+        if (usuarioActual == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-        if (!"ADMINISTRADOR".equals(usuarioActual.getRol()))
-            return "redirect:/dashboard";
+        if (!"ADMINISTRADOR".equals(usuarioActual.getRol())) {
+            return ResponseEntity.status(403).build();
+        }
 
         userService.deleteUser(id);
-
-        return "redirect:/users";
+        return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/users/toggle")
-    public String verificarUsuario(@RequestParam @NonNull Long id,
-                                   HttpSession session) {
+    @PostMapping("/toggle")
+    public ResponseEntity<?> cambiarEstadoUsuario(
+            @RequestParam @NonNull Long id,
+            HttpSession session) {
 
-        Usuario usuarioActual =
-                (Usuario) session.getAttribute("currentUser");
+        Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
 
-        if (usuarioActual == null)
-            return "redirect:/login";
+        if (usuarioActual == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-        if (!"ADMINISTRADOR".equals(usuarioActual.getRol()))
-            return "redirect:/dashboard";
+        if (!"ADMINISTRADOR".equals(usuarioActual.getRol())) {
+            return ResponseEntity.status(403).build();
+        }
 
         userService.toggleUserStatus(id);
-
-        return "redirect:/users";
+        return ResponseEntity.ok().build();
     }
 }

@@ -1,6 +1,8 @@
-# NexDine Backend
+# NEXDINE Backend
 
-Sistema de Gestión de Restaurantes - Backend
+Backend del sistema de gestión de restaurantes NEXDINE.
+
+El proyecto contiene únicamente la lógica del servidor, API REST, acceso a datos y modelos de negocio. La interfaz de usuario se encuentra en un repositorio frontend separado.
 
 ## Tecnologías
 
@@ -8,74 +10,96 @@ Sistema de Gestión de Restaurantes - Backend
 - Spring Boot 3.3.0
 - Spring Web
 - Spring Data JPA
-- H2 Database
+- PostgreSQL / Supabase
 - Lombok
 
 ## Requisitos
 
 - Java 21
-- Maven 3.6+
-
-## Instalación
-
-```bash
-cd backend
-mvn clean install
-```
+- Maven 3.6+ (o Maven Wrapper incluido)
 
 ## Ejecución
 
-```bash
-mvn spring-boot:run
+En Windows:
+
+```powershell
+.\mvnw.cmd spring-boot:run
 ```
 
-El backend estará disponible en `http://localhost:8080`
+En Linux/macOS:
 
-## Variables de Entorno
+```bash
+./mvnw spring-boot:run
+```
 
-Crea un archivo `.env` en la carpeta `backend/` basándote en `.env.example`:
+Por defecto, el backend queda disponible en:
 
-| Variable | Descripción | Valor por defecto |
-|----------|-------------|-------------------|
-| `SERVER_PORT` | Puerto del servidor | 8080 |
-| `SPR_DATASOURCE_URL` | URL de la base de datos H2 | jdbc:h2:mem:nextdinedb |
-| `SPRING_DATASOURCE_USERNAME` | Usuario de la base de datos | sa |
-| `SPRING_DATASOURCE_PASSWORD` | Contraseña de la base de datos | (vacío) |
-| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para CORS | http://localhost:5173 |
+```text
+http://localhost:8080
+```
 
-## Endpoints
+En Render, Spring utiliza automáticamente la variable `PORT` proporcionada por la plataforma.
+
+## Variables de entorno
+
+El archivo `.env.example` contiene la estructura esperada. El archivo `.env` real no debe subirse al repositorio.
+
+Variables principales:
+
+| Variable | Descripción |
+|---|---|
+| `SUPABASE_DB_URL` | URL JDBC de PostgreSQL/Supabase |
+| `SUPABASE_DB_USER` | Usuario de PostgreSQL/Supabase |
+| `SUPABASE_DB_PASSWORD` | Contraseña de PostgreSQL/Supabase |
+| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para consumir la API |
+
+## API
+
+### Autenticación
 
 | Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/` | Redirige a login o dashboard |
-| GET | `/login` | Muestra formulario de login |
-| POST | `/login` | Autentica usuario |
-| GET | `/logout` | Cierra sesión |
-| GET | `/dashboard` | Muestra panel principal |
+|---|---|---|
+| POST | `/login` | Autentica un usuario y crea la sesión |
+| GET | `/logout` | Cierra la sesión actual |
+| GET | `/api/auth/check` | Comprueba si existe una sesión activa |
+| GET | `/api/auth/me` | Obtiene el usuario autenticado |
+
+### Usuarios
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/users` | Lista usuarios autenticados |
+| GET | `/api/users/search?id={id}` | Busca un usuario por ID |
 | GET | `/users` | Lista usuarios |
-| GET | `/users/search` | Busca usuario por ID |
-| POST | `/users/create` | Crea nuevo usuario |
-| POST | `/users/edit` | Edita usuario existente |
-| POST | `/users/delete` | Elimina usuario |
-| POST | `/users/toggle` | Activa/desactiva usuario |
+| GET | `/users/search?id={id}` | Busca un usuario por ID |
+| POST | `/users/create` | Crea un usuario |
+| POST | `/users/edit` | Actualiza un usuario |
+| POST | `/users/delete` | Elimina un usuario |
+| POST | `/users/toggle` | Activa o suspende un usuario |
+
+Las operaciones de administración de usuarios requieren una sesión iniciada con rol `ADMINISTRADOR`.
 
 ## Estructura
 
-```
-backend/
-├── src/main/java/com/restaurant/app/
-│   ├── controller/
-│   ├── model/
-│   ├── repository/
-│   └── services/
-├── src/main/resources/
-│   ├── templates/          # Plantillas Thymeleaf (respaldo)
-│   └── application.properties
-├── src/test/
-├── pom.xml
-└── .env.example
+```text
+NEXDINE_Backend/
+├── src/
+│   └── main/
+│       ├── java/com/restaurant/app/
+│       │   ├── config/
+│       │   ├── controller/
+│       │   ├── model/
+│       │   ├── repository/
+│       │   ├── services/
+│       │   └── RestaurantApplication.java
+│       └── resources/
+│           └── application.properties
+├── .env.example
+├── .gitignore
+├── DockerFile
+├── mvnw
+├── mvnw.cmd
+└── pom.xml
 ```
 
-## Frontend
-
-El frontend React se encuentra en la carpeta `../frontend/`
+No se incluyen plantillas HTML, Thymeleaf ni archivos del frontend en este repositorio.
