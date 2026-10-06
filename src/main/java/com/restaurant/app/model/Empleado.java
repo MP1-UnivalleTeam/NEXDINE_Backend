@@ -13,7 +13,6 @@ public class Empleado extends Usuario {
 
     private String idEmpleado;
     private Double salario;
-    private String estado;
     private String turno;
 
     public void consultarPedidos() {

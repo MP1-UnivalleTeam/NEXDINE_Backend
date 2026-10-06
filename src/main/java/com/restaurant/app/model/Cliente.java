@@ -12,7 +12,6 @@ import lombok.EqualsAndHashCode;
 public class Cliente extends Usuario {
     
     private String idCliente;
-    private String estado;
 
     public void realizarPedido() {
         // TODO: Implementar realización de pedido

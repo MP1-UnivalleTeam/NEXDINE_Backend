@@ -17,14 +17,29 @@ public class SesionMesaService {
 
     private static final int MINUTOS_INACTIVIDAD = 15;
 
+    /**
+     * Crea una sesión para la mesa o reutiliza una activa y vigente.
+     * Una sesión expirada NUNCA se reutiliza: se marca inactiva y se genera
+     * una nueva con token nuevo.
+     */
     public SesionMesa crearSesion(String idMesa) {
         Optional<SesionMesa> existente = sesionMesaRepository
             .findByIdMesaAndActiva(idMesa, true);
 
         if (existente.isPresent()) {
             SesionMesa sesion = existente.get();
-            sesion.setUltimaActividad(LocalDateTime.now());
-            return sesionMesaRepository.save(sesion);
+
+            LocalDateTime limite = LocalDateTime.now().minusMinutes(MINUTOS_INACTIVIDAD);
+
+            // Sesión vencida por inactividad: invalidar y crear una nueva
+            if (sesion.getUltimaActividad() == null
+                    || sesion.getUltimaActividad().isBefore(limite)) {
+                sesion.setActiva(false);
+                sesionMesaRepository.save(sesion);
+            } else {
+                sesion.setUltimaActividad(LocalDateTime.now());
+                return sesionMesaRepository.save(sesion);
+            }
         }
 
         SesionMesa sesion = new SesionMesa();
@@ -36,6 +51,10 @@ public class SesionMesaService {
     }
 
     public boolean validarSesion(String token) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+
         Optional<SesionMesa> sesion = sesionMesaRepository.findByToken(token);
 
         if (sesion.isEmpty() || !sesion.get().isActiva()) {
@@ -43,7 +62,8 @@ public class SesionMesaService {
         }
 
         LocalDateTime limite = LocalDateTime.now().minusMinutes(MINUTOS_INACTIVIDAD);
-        if (sesion.get().getUltimaActividad().isBefore(limite)) {
+        if (sesion.get().getUltimaActividad() == null
+                || sesion.get().getUltimaActividad().isBefore(limite)) {
             sesion.get().setActiva(false);
             sesionMesaRepository.save(sesion.get());
             return false;
@@ -53,6 +73,47 @@ public class SesionMesaService {
         sesionMesaRepository.save(sesion.get());
 
         return true;
+    }
+
+    /**
+ * Comprueba si una sesión existe y sigue vigente SIN renovar su actividad.
+ *
+ * Se usa durante el polling del menú: consultar el catálogo no debe
+ * contar como actividad del cliente ni extender la sesión silenciosamente.
+ */
+    public boolean esSesionVigente(String token) {
+
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+
+        Optional<SesionMesa> sesion = sesionMesaRepository.findByToken(token);
+
+        if (sesion.isEmpty() || !sesion.get().isActiva()) {
+            return false;
+        }
+
+        LocalDateTime limite = LocalDateTime.now().minusMinutes(MINUTOS_INACTIVIDAD);
+
+        return sesion.get().getUltimaActividad() != null
+                && !sesion.get().getUltimaActividad().isBefore(limite);
+    }
+
+    /**
+     * Devuelve el código de mesa asociado a una sesión vigente.
+     */
+    public Optional<String> obtenerMesaDeSesion(String token) {
+
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+
+        return sesionMesaRepository.findByToken(token)
+                .filter(s -> s.isActiva()
+                        && s.getUltimaActividad() != null
+                        && !s.getUltimaActividad().isBefore(
+                                LocalDateTime.now().minusMinutes(MINUTOS_INACTIVIDAD)))
+                .map(SesionMesa::getIdMesa);
     }
 
     public void actualizarActividad(String token) {

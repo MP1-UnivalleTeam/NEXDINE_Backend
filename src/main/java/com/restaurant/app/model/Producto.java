@@ -33,4 +33,14 @@ public class Producto {
 
     @Column(name = "categoria_id")
     private Long categoriaId;
+
+    /**
+     * Disponibilidad del producto en la sucursal del usuario autenticado.
+     * Solo para presentación: NO se persiste en la tabla productos.
+     * Se calcula desde producto_sucursal (RF007).
+     *
+     * null = el usuario no tiene contexto de sucursal (SUPERADMIN)
+     */
+    @Transient
+    private Boolean disponibleEnMiSucursal;
 }

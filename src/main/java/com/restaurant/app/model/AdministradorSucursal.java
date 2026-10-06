@@ -8,7 +8,6 @@ import java.io.Serializable;
 @Entity
 @Table(name = "administrador_sucursal")
 @Data
-@NoArgsConstructor
 @IdClass(AdministradorSucursal.AdministradorSucursalId.class)
 public class AdministradorSucursal {
 
@@ -19,6 +18,14 @@ public class AdministradorSucursal {
     @Id
     @Column(name = "sucursal_id", nullable = false)
     private Long sucursalId;
+
+    public AdministradorSucursal() {
+    }
+
+    public AdministradorSucursal(Long administradorId, Long sucursalId) {
+        this.administradorId = administradorId;
+        this.sucursalId = sucursalId;
+    }
 
     @Data
     @NoArgsConstructor

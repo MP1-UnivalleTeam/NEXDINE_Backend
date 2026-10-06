@@ -16,6 +16,14 @@ public class Restaurante {
     @Column(nullable = false)
     private String nombre;
 
+    /**
+     * Identificador URL-safe del restaurante para el enlace público /menu/{slug}.
+     * Se genera una sola vez a partir del nombre y NO cambia aunque el nombre
+     * se modifique, para no romper enlaces ya compartidos.
+     */
+    @Column(unique = true, length = 100)
+    private String slug;
+
     private String descripcion;
 
     @Column(nullable = false)

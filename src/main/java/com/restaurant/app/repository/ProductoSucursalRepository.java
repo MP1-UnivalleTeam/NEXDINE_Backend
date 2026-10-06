@@ -9,4 +9,7 @@ public interface ProductoSucursalRepository extends JpaRepository<ProductoSucurs
     List<ProductoSucursal> findByProductoId(Long productoId);
     List<ProductoSucursal> findBySucursalId(Long sucursalId);
     Optional<ProductoSucursal> findByProductoIdAndSucursalId(Long productoId, Long sucursalId);
+
+    void deleteByProductoId(Long productoId);
+    void deleteBySucursalId(Long sucursalId);
 }
