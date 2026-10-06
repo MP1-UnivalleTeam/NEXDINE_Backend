@@ -189,6 +189,34 @@ public class ApiController {
         }
     }
 
+    // RF003 — Registra la selección de tipo de servicio del cliente.
+// No crea sesión ni renueva la vigencia de la actual.
+    @PutMapping("/mesa/sesion/tipo-servicio")
+    public ResponseEntity<?> registrarTipoServicio(@RequestParam String token,
+                                                   @RequestParam(required = false) String tipo) {
+        try {
+            String registrado = sesionMesaService.registrarTipoServicio(token, tipo);
+            return ResponseEntity.ok(Map.of("tipoServicio", registrado));
+        } catch (IllegalArgumentException e) {
+            // "Tipo de servicio inválido."
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "error", "SESION_EXPIRADA",
+                    "mensaje", e.getMessage()
+            ));
+        }
+    }
+
+    // RF003 — Consulta el tipo de servicio registrado en la sesión.
+    @GetMapping("/mesa/sesion/tipo-servicio")
+    public ResponseEntity<?> obtenerTipoServicio(@RequestParam String token) {
+        // HashMap porque el valor puede ser null (cliente aún sin confirmar)
+        Map<String, Object> datos = new HashMap<>();
+        datos.put("tipoServicio", sesionMesaService.obtenerTipoServicio(token).orElse(null));
+        return ResponseEntity.ok(datos);
+    }
+
     // RF022 - Valida la sesión temporal. Responde 401 si expiró.
     @GetMapping("/mesa/sesion/estado")
     public ResponseEntity<?> estadoSesion(@RequestParam String token) {

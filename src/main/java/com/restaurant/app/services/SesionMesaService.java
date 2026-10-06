@@ -4,6 +4,7 @@ import com.restaurant.app.model.SesionMesa;
 import com.restaurant.app.repository.SesionMesaRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -114,6 +115,56 @@ public class SesionMesaService {
                         && !s.getUltimaActividad().isBefore(
                                 LocalDateTime.now().minusMinutes(MINUTOS_INACTIVIDAD)))
                 .map(SesionMesa::getIdMesa);
+    }
+
+    /**
+ * Tipos de servicio permitidos por RF003.
+ */
+public static final String TIPO_DOMICILIO = "DOMICILIO";
+    public static final String TIPO_PARA_LLEVAR = "PARA_LLEVAR";
+
+    /**
+     * RF003 — Registra el tipo de servicio elegido por el cliente.
+     *
+     * Reglas:
+     *  · Solo DOMICILIO o PARA_LLEVAR. Cualquier otro valor se rechaza.
+     *  · No crea sesión nueva ni renueva la vigencia de la existente.
+     *  · Si la sesión expiró, se rechaza con estado inválido.
+     */
+    @Transactional
+    public String registrarTipoServicio(String token, String tipoServicio) {
+
+        String tipo = tipoServicio == null ? null : tipoServicio.trim().toUpperCase();
+
+        if (!TIPO_DOMICILIO.equals(tipo) && !TIPO_PARA_LLEVAR.equals(tipo)) {
+            throw new IllegalArgumentException("Tipo de servicio inválido.");
+        }
+
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("Sesión no válida.");
+        }
+
+        Optional<SesionMesa> sesion = sesionMesaRepository.findByToken(token);
+
+        if (sesion.isEmpty() || !sesion.get().isActiva()) {
+            throw new IllegalStateException("Tu sesión ha expirado. Escanea nuevamente el código QR.");
+        }
+
+        sesion.get().setTipoServicio(tipo);
+        sesionMesaRepository.save(sesion.get());
+
+        return tipo;
+    }
+
+    /**
+     * Devuelve el tipo de servicio registrado en una sesión, o null.
+     */
+    public Optional<String> obtenerTipoServicio(String token) {
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        return sesionMesaRepository.findByToken(token)
+                .map(SesionMesa::getTipoServicio);
     }
 
     public void actualizarActividad(String token) {

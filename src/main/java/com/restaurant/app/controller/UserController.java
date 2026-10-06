@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -189,10 +190,11 @@ public class UserController {
                     .body(Map.of("error", "No se puede consultar la asignación de un SUPERADMIN."));
         }
 
-        return ResponseEntity.ok(Map.of(
-                "usuarioId", objetivo.get().getId(),
-                "sucursalId", userService.obtenerSucursalAsignada(objetivo.get())
-        ));
+        // HashMap porque sucursalId puede ser null y Map.of() no admite valores nulos
+        Map<String, Object> datos = new HashMap<>();
+        datos.put("usuarioId", objetivo.get().getId());
+        datos.put("sucursalId", userService.obtenerSucursalAsignada(objetivo.get()));
+        return ResponseEntity.ok(datos);
     }
 
     @PostMapping("/create")
