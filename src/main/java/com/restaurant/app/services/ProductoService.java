@@ -92,4 +92,18 @@ public class ProductoService {
         Optional<Categoria> categoria = categoriaRepository.findById(categoriaId);
         return categoria.isPresent() && categoria.get().getRestauranteId().equals(restauranteId);
     }
+
+    /**
+     * Elimina un producto y sus asociaciones en producto_sucursal.
+     * Transaccional para evitar registros huérfanos.
+     */
+    @Transactional
+    public void eliminarProducto(Long id) {
+        // Eliminar primero las asociaciones en producto_sucursal
+        List<ProductoSucursal> asociaciones = productoSucursalRepository.findByProductoId(id);
+        productoSucursalRepository.deleteAll(asociaciones);
+
+        // Luego eliminar el producto
+        productoRepository.deleteById(id);
+    }
 }

@@ -185,4 +185,53 @@ public class ProductoController {
                     .body(Map.of("error", "Error al actualizar el producto: " + e.getMessage()));
         }
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> eliminarProducto(
+            @PathVariable Long id,
+            HttpSession session) {
+
+        // Verificar autenticación
+        Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
+
+        if (usuarioActual == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        // Verificar rol ADMINISTRADOR o SUPERADMIN
+        String rol = usuarioActual.getRol();
+        if (!"ADMINISTRADOR".equals(rol) && !"SUPERADMIN".equals(rol)) {
+            return ResponseEntity.status(403).build();
+        }
+
+        try {
+            // Obtener el contexto del usuario (restaurante y sucursal)
+            UsuarioContextService.UsuarioContext contexto = usuarioContextService.obtenerContexto(usuarioActual);
+
+            // Buscar el producto
+            Producto producto = productoService.getProductoById(id);
+
+            if (producto == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            // Verificar que el producto pertenece al restaurante del administrador
+            if (!producto.getRestauranteId().equals(contexto.getRestauranteId())) {
+                return ResponseEntity.status(403)
+                        .body(Map.of("error", "No tiene permisos para eliminar este producto"));
+            }
+
+            // Eliminar el producto (y sus asociaciones en producto_sucursal)
+            productoService.eliminarProducto(id);
+
+            return ResponseEntity.ok(Map.of("message", "Producto eliminado exitosamente"));
+
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(Map.of("error", "Error al eliminar el producto: " + e.getMessage()));
+        }
+    }
 }
