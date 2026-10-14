@@ -14,10 +14,8 @@ public class Cocinero extends Empleado {
     private String areaCocina;
 
     public void verPedidosPendientes() {
-        // TODO: Implementar visualización de pendientes
     }
 
     public void cambiarEstadoPedido() {
-        // TODO: Implementar cambio de estado de pedido
     }
 }

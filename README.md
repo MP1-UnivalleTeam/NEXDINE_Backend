@@ -11,6 +11,7 @@ El proyecto contiene únicamente la lógica del servidor, API REST, acceso a dat
 - Spring Web
 - Spring Data JPA
 - PostgreSQL / Supabase
+- Cloudinary Java SDK 2.5.0
 - Lombok
 
 ## Requisitos
@@ -40,6 +41,16 @@ http://localhost:8080
 
 En Render, Spring utiliza automáticamente la variable `PORT` proporcionada por la plataforma.
 
+## Pruebas
+
+```powershell
+.\mvnw.cmd test
+```
+
+No requieren base de datos ni credenciales de Cloudinary: validan el
+contenido de los archivos, las reglas de imagen, la compensación de errores
+y los códigos HTTP.
+
 ## Variables de entorno
 
 El archivo `.env.example` contiene la estructura esperada. El archivo `.env` real no debe subirse al repositorio.
@@ -52,6 +63,116 @@ Variables principales:
 | `SUPABASE_DB_USER` | Usuario de PostgreSQL/Supabase |
 | `SUPABASE_DB_PASSWORD` | Contraseña de PostgreSQL/Supabase |
 | `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para consumir la API |
+| `CLOUDINARY_CLOUD_NAME` | Nombre del cloud de Cloudinary |
+| `CLOUDINARY_API_KEY` | Clave pública de Cloudinary |
+| `CLOUDINARY_API_SECRET` | Secreto de Cloudinary (nunca se expone) |
+
+Opcionales:
+
+| Variable | Por defecto | Descripción |
+|---|---|---|
+| `CLOUDINARY_FOLDER` | `nexdine/productos` | Carpeta destino de las imágenes |
+| `APP_IMAGEN_MAX_BYTES` | `5242880` | Tamaño máximo de imagen (5 MB) |
+
+Si faltan las variables de Cloudinary, la aplicación **arranca con normalidad**:
+la subida de imágenes por archivo responde `503` con un mensaje que indica el
+nombre de las variables faltantes. El resto del sistema, incluido el campo
+`imagen` como URL en texto, sigue funcionando.
+
+## Imágenes de productos (Cloudinary)
+
+Las imágenes se validan por su **contenido real** (magic bytes), no por la
+extensión ni por el `Content-Type` declarado por el cliente.
+
+| Aspecto | Valor |
+|---|---|
+| Formatos | JPEG, PNG, WebP |
+| Tamaño máximo | 5 MB |
+| Carpeta | `nexdine/productos` |
+| Identificador | `producto_<uuid>` (único, no sobrescribe) |
+| URL persistida | `secure_url` (siempre HTTPS) |
+
+En PostgreSQL se guardan **solo la URL y el `public_id`**; nunca binarios.
+
+### Endpoints de productos
+
+| Método | Ruta | Content-Type | Descripción |
+|---|---|---|---|
+| POST | `/productos/create` | urlencoded | Crear producto (contrato actual) |
+| POST | `/productos/create` | multipart/form-data | Crear producto con imagen |
+| PUT | `/productos/{id}` | urlencoded | Editar producto (contrato actual) |
+| PUT | `/productos/{id}` | multipart/form-data | Editar producto con imagen |
+| DELETE | `/productos/{id}` | — | Eliminar producto y limpiar su imagen |
+| GET | `/productos/imagenes/config` | — | Estado de la integración (sin secretos) |
+
+Spring distingue las variantes `urlencoded` y `multipart` de la misma ruta por
+el `Content-Type`, por lo que el contrato existente **no se rompe**.
+
+Códigos de error relevantes:
+
+| Código | Causa |
+|---|---|
+| `400` | Archivo inválido o campos obligatorios incorrectos |
+| `413` | Archivo mayor al límite permitido |
+| `502` | Fallo de comunicación con Cloudinary |
+| `503` | Faltan variables de entorno de Cloudinary |
+| `409` | Producto duplicado (mismo nombre normalizado en el restaurante) |
+
+## SKU de productos
+
+Cada producto recibe un identificador comercial **único en toda la base**:
+
+```
+INICIALES-CODIGO_RESTAURANTE-CONSECUTIVO     ->  EB-R001-000001
+```
+
+| Segmento | Origen | Ejemplo |
+|---|---|---|
+| Iniciales | Nombre del restaurante, congeladas al asignarlas | `EB` |
+| Código | Derivado del id (inmutable), permanente y único | `R001` |
+| Consecutivo | Contador transaccional por restaurante, mínimo 6 dígitos | `000001` |
+
+Características:
+
+- El **SKU no reemplaza la llave primaria**: `id` sigue autogenerado por la BD.
+- El **frontend nunca elige** el SKU: el controller no lo acepta como parámetro.
+- El consecutivo **nunca se reutiliza**, ni siquiera al borrar productos.
+- Renombrar el restaurante **no altera** los SKU ya emitidos.
+- Si supera 999999 crece sin truncar (`1000000`).
+
+### Prevención de duplicados
+
+Dos productos del mismo restaurante se consideran equivalentes si sus nombres
+se normalizan igual (sin tildes, minúsculas, sin símbolos, espacios colapsados).
+
+```
+"Hamburguesa Clasica"  ==  " hamburguesa clasica "  ==  "HAMBURGUESA CLASICA"
+```
+
+- `POST /productos/create` y `PUT /productos/{id}` responden **409 Conflict**
+  si el nombre normalizado ya existe en ese restaurante.
+- Restaurantes distintos sí pueden tener productos homónimos.
+- Al editar se excluye el producto actual de la comprobación.
+- La garantía ante concurrencia la aporta el índice UNIQUE de PostgreSQL,
+  no la comprobación previa en Java.
+
+### Estado de la asignación
+
+```http
+GET /productos/sku/estado     (solo SUPERADMIN)
+```
+
+```json
+{
+  "restaurantesSinCodigo": 0,
+  "restaurantesSinIniciales": 0,
+  "migracionCompleta": true,
+  "productosSinSku": 0,
+  "formato": "GEN-R000-000000"
+}
+```
+
+La migración de base de datos está en `archivos IA/migracion_sku_duplicados.sql`.
 
 ## API
 
@@ -84,16 +205,28 @@ Las operaciones de administración de usuarios requieren una sesión iniciada co
 ```text
 NEXDINE_Backend/
 ├── src/
-│   └── main/
-│       ├── java/com/restaurant/app/
-│       │   ├── config/
-│       │   ├── controller/
-│       │   ├── model/
-│       │   ├── repository/
-│       │   ├── services/
-│       │   └── RestaurantApplication.java
-│       └── resources/
-│           └── application.properties
+│   ├── main/
+│   │   ├── java/com/restaurant/app/
+│   │   │   ├── config/
+│   │   │   │   ├── CloudinaryConfig.java
+│   │   │   │   ├── CloudinaryProperties.java
+│   │   │   │   ├── CorsConfig.java
+│   │   │   │   └── SesionScheduler.java
+│   │   │   ├── controller/
+│   │   │   ├── model/
+│   │   │   ├── repository/
+│   │   │   ├── services/
+│   │   │   │   ├── CloudinaryStorageService.java
+│   │   │   │   ├── ImagenProductoValidador.java
+│   │   │   │   ├── ProductoImagenService.java
+│   │   │   │   ├── SkuService.java
+│   │   │   │   ├── SkuUtil.java
+│   │   │   │   └── ...
+│   │   │   └── RestaurantApplication.java
+│   │   └── resources/
+│   │       └── application.properties
+│   └── test/
+│       └── java/com/restaurant/app/
 ├── .env.example
 ├── .gitignore
 ├── DockerFile

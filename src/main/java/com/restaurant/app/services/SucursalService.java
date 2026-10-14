@@ -9,17 +9,13 @@ import com.restaurant.app.repository.ProductoSucursalRepository;
 import com.restaurant.app.repository.SucursalRepository;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
 import java.util.List;
 
-/**
- * Gestión de sucursales del restaurante (solo SUPERADMIN).
- *
- * El restaurante se obtiene SIEMPRE del contexto autenticado:
- * el frontend nunca envía restauranteId.
- */
 @Service
 public class SucursalService {
 
@@ -44,16 +40,14 @@ public class SucursalService {
         this.usuarioContextService = usuarioContextService;
     }
 
-    /** Lista todas las sucursales del restaurante del SUPERADMIN. */
     public List<Sucursal> listar(Usuario usuario) {
-        Long restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
+        UUID restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
         return sucursalRepository.findByRestauranteId(restauranteId);
     }
 
-    /** Crea una sucursal belonging al restaurante del contexto. */
     @Transactional
     public Sucursal crear(Usuario usuario, String nombre, String direccion, String telefono) {
-        Long restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
+        UUID restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
 
         if (nombre == null || nombre.isBlank()) {
             throw new IllegalArgumentException("El nombre de la sucursal es obligatorio.");
@@ -73,13 +67,11 @@ public class SucursalService {
         sucursal.setActiva(true);
         sucursal.setFechaCreacion(java.time.LocalDateTime.now());
 
-        // Una sucursal nueva NO recibe productos automáticamente
         return sucursalRepository.save(sucursal);
     }
 
-    /** Actualiza datos básicos. No permite cambiar el restaurante propietario. */
     @Transactional
-    public Sucursal actualizar(Usuario usuario, Long sucursalId,
+    public Sucursal actualizar(Usuario usuario, @NonNull UUID sucursalId,
                                String nombre, String direccion, String telefono) {
         Sucursal sucursal = obtenerSucursalDelRestaurante(usuario, sucursalId);
 
@@ -102,26 +94,17 @@ public class SucursalService {
         return sucursalRepository.save(sucursal);
     }
 
-    /** Activa o desactiva la sucursal. No la elimina. */
     @Transactional
-    public Sucursal cambiarEstado(Usuario usuario, Long sucursalId, boolean activa) {
+    public Sucursal cambiarEstado(Usuario usuario, @NonNull UUID sucursalId, boolean activa) {
         Sucursal sucursal = obtenerSucursalDelRestaurante(usuario, sucursalId);
         sucursal.setActiva(activa);
         return sucursalRepository.save(sucursal);
     }
 
-    /**
-     * Elimina la sucursal.
-     *
-     * Los productos GLOBALES no se tocan: solo desaparecen sus relaciones
-     * producto_sucursal. Si hay mesas o personal asignado, se informa al usuario
-     * en lugar de producir un error genérico.
-     */
     @Transactional
-    public void eliminar(Usuario usuario, Long sucursalId) {
+    public void eliminar(Usuario usuario, @NonNull UUID sucursalId) {
         Sucursal sucursal = obtenerSucursalDelRestaurante(usuario, sucursalId);
 
-        // Relations que impiden eliminar de forma segura
         long mesas = mesaRepository.findBySucursalId(sucursalId).size();
         long administradores = administradorSucursalRepository
                 .findBySucursalId(sucursalId).size();
@@ -145,8 +128,6 @@ public class SucursalService {
         }
 
         try {
-            // Solo se eliminan las RELACIONES con productos.
-            // Los productos globales del restaurante permanecen intactos.
             productoSucursalRepository.deleteBySucursalId(sucursalId);
             productoSucursalRepository.flush();
             sucursalRepository.delete(sucursal);
@@ -157,12 +138,9 @@ public class SucursalService {
         }
     }
 
-    /**
-     * Obtiene la sucursal validando que pertenezca al restaurante del contexto.
-     * Evita que un SUPERADMIN manipule sucursales de otro restaurante por ID.
-     */
-    private Sucursal obtenerSucursalDelRestaurante(Usuario usuario, Long sucursalId) {
-        Long restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
+    @NonNull
+    private Sucursal obtenerSucursalDelRestaurante(Usuario usuario, @NonNull UUID sucursalId) {
+        UUID restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
 
         Sucursal sucursal = sucursalRepository.findById(sucursalId)
                 .orElseThrow(() -> new IllegalArgumentException("La sucursal no existe."));

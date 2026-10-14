@@ -8,6 +8,7 @@ import com.restaurant.app.repository.UserRepository;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
 import java.util.List;
 import java.util.Optional;
 
@@ -72,7 +73,7 @@ public Usuario createUser(String nombre,
                           String rol,
                           String celular,
                           String direccion,
-                          Long sucursalId) {
+                          UUID sucursalId) {
 
     Usuario nuevoUsuario;
 
@@ -108,7 +109,6 @@ public Usuario createUser(String nombre,
 
     Usuario usuarioGuardado = userRepository.save(nuevoUsuario);
 
-    // ADMINISTRADOR y empleados operativos quedan asociados a una sucursal
     if (sucursalId != null) {
         if ("ADMINISTRADOR".equals(rol)) {
             administradorSucursalRepository.save(
@@ -122,12 +122,12 @@ public Usuario createUser(String nombre,
     return usuarioGuardado;
 }
 
-public void updateUser(@NonNull Long id,
+public void updateUser(@NonNull UUID id,
                        String nombre,
                        String rol,
                        String celular,
                        String direccion,
-                       Long sucursalId,
+                       UUID sucursalId,
                        boolean quitarSucursal) {
 
     userRepository.findById(id).ifPresent(user -> {
@@ -142,7 +142,6 @@ public void updateUser(@NonNull Long id,
         boolean esAdmin = "ADMINISTRADOR".equals(rol);
         boolean esEmpleadoOperativo = user instanceof Empleado;
 
-        // Quitar sucursal explícitamente
         if (quitarSucursal) {
             if (esAdmin) {
                 eliminarSucursalAdministrador(user.getId());
@@ -152,7 +151,6 @@ public void updateUser(@NonNull Long id,
             return;
         }
 
-        // Reasignar / asignar sucursal (reemplaza la anterior, sin duplicar)
         if (sucursalId != null) {
             if (esAdmin) {
                 asignarSucursalAdministrador(user.getId(), sucursalId);
@@ -163,24 +161,15 @@ public void updateUser(@NonNull Long id,
     });
 }
 
-/**
- * Asigna o REASIGNA la sucursal de un administrador.
- * La relación se trata como asignación actual:
- *  · sin asignación previa → crea
- *  · con otra sucursal     → reemplaza
- *  · con la misma sucursal → no-op (sin error)
- */
-private void asignarSucursalAdministrador(Long administradorId, Long sucursalId) {
+private void asignarSucursalAdministrador(UUID administradorId, UUID sucursalId) {
     List<AdministradorSucursal> actuales = administradorSucursalRepository
             .findByAdministradorId(administradorId);
 
-    // Ya está en esa sucursal: no hay nada que hacer
     if (actuales.size() == 1
             && actuales.get(0).getSucursalId().equals(sucursalId)) {
         return;
     }
 
-    // Reemplazar: eliminar la(s) anterior(es) y crear la nueva
     if (!actuales.isEmpty()) {
         administradorSucursalRepository.deleteAll(actuales);
         administradorSucursalRepository.flush();
@@ -189,7 +178,7 @@ private void asignarSucursalAdministrador(Long administradorId, Long sucursalId)
     administradorSucursalRepository.save(new AdministradorSucursal(administradorId, sucursalId));
 }
 
-private void eliminarSucursalAdministrador(Long administradorId) {
+private void eliminarSucursalAdministrador(UUID administradorId) {
     List<AdministradorSucursal> actuales = administradorSucursalRepository
             .findByAdministradorId(administradorId);
     if (!actuales.isEmpty()) {
@@ -197,7 +186,7 @@ private void eliminarSucursalAdministrador(Long administradorId) {
     }
 }
 
-private void asignarSucursalEmpleado(Long empleadoId, Long sucursalId) {
+private void asignarSucursalEmpleado(UUID empleadoId, UUID sucursalId) {
     List<EmpleadoSucursal> actuales = empleadoSucursalRepository
             .findByEmpleadoId(empleadoId);
 
@@ -214,7 +203,7 @@ private void asignarSucursalEmpleado(Long empleadoId, Long sucursalId) {
     empleadoSucursalRepository.save(new EmpleadoSucursal(empleadoId, sucursalId));
 }
 
-private void eliminarSucursalEmpleado(Long empleadoId) {
+private void eliminarSucursalEmpleado(UUID empleadoId) {
     List<EmpleadoSucursal> actuales = empleadoSucursalRepository
             .findByEmpleadoId(empleadoId);
     if (!actuales.isEmpty()) {
@@ -222,12 +211,12 @@ private void eliminarSucursalEmpleado(Long empleadoId) {
     }
 }
 
-public void deleteUser(@NonNull Long id) {
+public void deleteUser(@NonNull UUID id) {
 
     userRepository.deleteById(id);
 }
 
-public void toggleUserStatus(@NonNull Long id) {
+public void toggleUserStatus(@NonNull UUID id) {
 
     userRepository.findById(id).ifPresent(usuario -> {
 
@@ -237,18 +226,12 @@ public void toggleUserStatus(@NonNull Long id) {
     });
 }
 
-public Optional<Usuario> getUserById(@NonNull Long id) {
+public Optional<Usuario> getUserById(@NonNull UUID id) {
 
     return userRepository.findById(id);
 }
 
-/**
- * Resuelve la sucursal actualmente asignada a un usuario.
- * ADMINISTRADOR → administrador_sucursal
- * Empleado      → empleado_sucursal
- * CLIENTE       → null
- */
-public Long obtenerSucursalAsignada(Usuario usuario) {
+public UUID obtenerSucursalAsignada(Usuario usuario) {
 
     if (usuario == null) {
         return null;
@@ -257,24 +240,20 @@ public Long obtenerSucursalAsignada(Usuario usuario) {
     if ("ADMINISTRADOR".equals(usuario.getRol())) {
         return administradorSucursalRepository.findByAdministradorId(usuario.getId())
                 .stream().findFirst()
-                .map(AdministradorSucursal::getSucursalId)
+                .map(asociacion -> asociacion.getSucursalId())
                 .orElse(null);
     }
 
     if (usuario instanceof Empleado) {
         return empleadoSucursalRepository.findByEmpleadoId(usuario.getId())
                 .stream().findFirst()
-                .map(EmpleadoSucursal::getSucursalId)
+                .map(asociacion -> asociacion.getSucursalId())
                 .orElse(null);
     }
 
     return null;
 }
 
-/**
- * Anota cada usuario con su sucursal real para que el frontend
- * muestre el valor correcto en el selector de edición (RF018).
- */
 public List<Usuario> getUsuariosConSucursal() {
     List<Usuario> usuarios = userRepository.findAll();
     usuarios.forEach(u -> u.setSucursalId(obtenerSucursalAsignada(u)));

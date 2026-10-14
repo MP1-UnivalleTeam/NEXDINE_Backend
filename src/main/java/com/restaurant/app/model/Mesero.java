@@ -14,14 +14,11 @@ public class Mesero extends Empleado {
     private String mesasAsignadas;
 
     public void seleccionarMesa() {
-        // TODO: Implementar selección de mesa
     }
 
     public void registrarPedidoManual() {
-        // TODO: Implementar registro manual
     }
 
     public void consultarEstadoMesa() {
-        // TODO: Implementar consulta de estado de mesa
     }
 }

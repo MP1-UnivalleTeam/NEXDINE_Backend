@@ -2,13 +2,12 @@ package com.restaurant.app.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.lang.NonNull;
 import java.io.Serializable;
+import java.util.UUID;
 
-/**
- * Mapeo de la tabla empleado_sucursal.
- * Empleado <-> Sucursal
- */
 @Entity
 @Table(name = "empleado_sucursal")
 @Data
@@ -17,16 +16,18 @@ public class EmpleadoSucursal {
 
     @Id
     @Column(name = "empleado_id", nullable = false)
-    private Long empleadoId;
+    @Getter(onMethod_ = @__(@NonNull))
+    private UUID empleadoId;
 
     @Id
     @Column(name = "sucursal_id", nullable = false)
-    private Long sucursalId;
+    @Getter(onMethod_ = @__(@NonNull))
+    private UUID sucursalId;
 
     public EmpleadoSucursal() {
     }
 
-    public EmpleadoSucursal(Long empleadoId, Long sucursalId) {
+    public EmpleadoSucursal(UUID empleadoId, UUID sucursalId) {
         this.empleadoId = empleadoId;
         this.sucursalId = sucursalId;
     }
@@ -34,7 +35,7 @@ public class EmpleadoSucursal {
     @Data
     @NoArgsConstructor
     public static class EmpleadoSucursalId implements Serializable {
-        private Long empleadoId;
-        private Long sucursalId;
+        private UUID empleadoId;
+        private UUID sucursalId;
     }
 }

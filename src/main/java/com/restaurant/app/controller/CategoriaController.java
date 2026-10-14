@@ -1,26 +1,26 @@
 package com.restaurant.app.controller;
 
-import com.restaurant.app.model.Categoria;
 import com.restaurant.app.model.Usuario;
 import com.restaurant.app.services.CategoriaService;
 
 import jakarta.servlet.http.HttpSession;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.UUID;
 
-/**
- * Gestión de categorías del restaurante — solo SUPERADMIN.
- */
 @RestController
 @RequestMapping("/categorias")
 public class CategoriaController {
 
-    @Autowired
-    private CategoriaService categoriaService;
+    private final CategoriaService categoriaService;
+
+    public CategoriaController(CategoriaService categoriaService) {
+        this.categoriaService = categoriaService;
+    }
 
     private ResponseEntity<?> requiereSuperadmin(HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
@@ -74,7 +74,7 @@ public class CategoriaController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> actualizar(@PathVariable Long id,
+    public ResponseEntity<?> actualizar(@PathVariable @NonNull UUID id,
                                         @RequestParam String nombre,
                                         @RequestParam(required = false) String descripcion,
                                         @RequestParam(required = false) Boolean activa,

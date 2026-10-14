@@ -8,24 +8,26 @@ import com.restaurant.app.services.MesaService;
 
 import jakarta.servlet.http.HttpSession;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/mesas")
 public class MesaController {
 
-    @Autowired
-    private MesaService mesaService;
+    private final MesaService mesaService;
+
+    public MesaController(MesaService mesaService) {
+        this.mesaService = mesaService;
+    }
 
     @GetMapping
-    public ResponseEntity<?> listarMesas(@RequestParam(required = false) Long sucursalId,
+    public ResponseEntity<?> listarMesas(@RequestParam(required = false) UUID sucursalId,
                                          HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
 
@@ -71,11 +73,6 @@ public class MesaController {
         }
     }
 
-    /**
-     * Enlace público del menú del restaurante (RF002).
-     * Devuelve nombre y slug para que el SUPERADMIN comparta el enlace.
-     * El slug se genera automáticamente si el restaurante aún no lo tiene.
-     */
     @GetMapping("/enlace-publico")
     public ResponseEntity<?> enlacePublico(HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
@@ -104,7 +101,7 @@ public class MesaController {
 
     @PostMapping
     public ResponseEntity<?> crearMesa(@RequestParam String nombre,
-                                       @RequestParam(required = false) Long sucursalId,
+                                       @RequestParam(required = false) UUID sucursalId,
                                        HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
 
@@ -130,7 +127,7 @@ public class MesaController {
     }
 
     @PostMapping("/{id}/estado")
-    public ResponseEntity<?> cambiarEstado(@PathVariable Long id,
+    public ResponseEntity<?> cambiarEstado(@PathVariable @NonNull UUID id,
                                            @RequestParam boolean activa,
                                            HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");

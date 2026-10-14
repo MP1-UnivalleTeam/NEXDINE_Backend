@@ -16,14 +16,11 @@ public class Empleado extends Usuario {
     private String turno;
 
     public void consultarPedidos() {
-        // TODO: Implementar consulta de pedidos
     }
 
     public void actualizarEstadoPedido() {
-        // TODO: Implementar actualización de estado
     }
 
     public void modificarPedido() {
-        // TODO: Implementar modificación de pedido
     }
 }

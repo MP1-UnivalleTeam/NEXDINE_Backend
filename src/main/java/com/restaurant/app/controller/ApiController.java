@@ -10,33 +10,37 @@ import com.restaurant.app.services.MesaService;
 import com.restaurant.app.services.SesionMesaService;
 import com.restaurant.app.services.UserService;
 import jakarta.servlet.http.HttpSession;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api")
 public class ApiController {
 
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
+    private final SesionMesaService sesionMesaService;
+    private final MenuService menuService;
+    private final MesaService mesaService;
+    private final RestauranteRepository restauranteRepository;
 
-    @Autowired
-    private SesionMesaService sesionMesaService;
-
-    @Autowired
-    private MenuService menuService;
-
-    @Autowired
-    private MesaService mesaService;
-
-    @Autowired
-    private RestauranteRepository restauranteRepository;
+    public ApiController(UserService userService,
+                         SesionMesaService sesionMesaService,
+                         MenuService menuService,
+                         MesaService mesaService,
+                         RestauranteRepository restauranteRepository) {
+        this.userService = userService;
+        this.sesionMesaService = sesionMesaService;
+        this.menuService = menuService;
+        this.mesaService = mesaService;
+        this.restauranteRepository = restauranteRepository;
+    }
 
     @GetMapping("/auth/check")
     public ResponseEntity<?> checkAuth(HttpSession session) {
@@ -66,21 +70,19 @@ public class ApiController {
     }
 
     @GetMapping("/users/search")
-    public ResponseEntity<?> searchUser(@RequestParam Long id, HttpSession session) {
+    public ResponseEntity<?> searchUser(@RequestParam @NonNull UUID id, HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
         if (usuarioActual == null) {
             return ResponseEntity.status(401).build();
         }
         Optional<Usuario> usuario = userService.getUserById(id);
         if (usuario.isPresent()) {
-            return ResponseEntity.ok(usuario.get());
+            Usuario encontrado = usuario.get();
+            return ResponseEntity.ok(encontrado);
         }
         return ResponseEntity.notFound().build();
     }
 
-    // RF001 - Acceso al menú mediante QR
-    // El parámetro "mesa" transporta el CODIGO opaco de la mesa (mesa-xxxxxxxx),
-    // no su id numérico. Se valida contra la tabla mesas.
     @GetMapping("/menu")
     public ResponseEntity<?> verMenu(@RequestParam String mesa) {
         Optional<Mesa> mesaOpt = mesaService.buscarPorCodigoActiva(mesa);
@@ -95,14 +97,12 @@ public class ApiController {
         Mesa mesaValida = mesaOpt.get();
 
         try {
-            // La sesión se asocia al código de la mesa
             SesionMesa sesion = sesionMesaService.crearSesion(mesaValida.getCodigo());
 
             Map<String, Object> response = new HashMap<>();
             response.put("mesa", mesaValida.getNombre());
             response.put("codigoMesa", mesaValida.getCodigo());
             response.put("token", sesion.getToken());
-            // Menú según la disponibilidad real de la sucursal de la mesa (RF007)
             response.put("menu", menuService
                     .getMenuPorSucursal(mesaValida.getSucursalId())
                     .get("categorias"));
@@ -114,8 +114,6 @@ public class ApiController {
         }
     }
 
-    // RF002 - Enlace digital público del restaurante: /api/menu/{slug}
-// NO requiere sesión HTTP, NO crea SesionMesa, NO genera token.
     @GetMapping("/menu/{slug}")
     public ResponseEntity<?> menuPublico(@PathVariable String slug) {
         Optional<Restaurante> restauranteOpt = restauranteRepository
@@ -143,13 +141,9 @@ public class ApiController {
         }
     }
 
-    // FASE 11 - Actualización automática del menú (polling).
-    // NO crea sesión, NO renueva la actividad: solo lee el catálogo.
-    // Responde 401 si la sesión expiró para disparar el flujo de expiración.
     @GetMapping("/menu/por-sesion")
     public ResponseEntity<?> menuPorSesion(@RequestParam String token) {
 
-        // Validar SIN renovar la actividad de la sesión
         if (!sesionMesaService.esSesionVigente(token)) {
             return ResponseEntity.status(401).body(Map.of(
                     "error", "SESION_EXPIRADA",
@@ -165,8 +159,6 @@ public class ApiController {
             ));
         }
 
-        // La sesión es válida: se resuelve la mesa y su sucursal para
-        // devolver el menú con la disponibilidad real de esa sede (RF007).
         Optional<Mesa> mesaOpt = mesaService.buscarPorCodigoActiva(codigoMesaOpt.get());
 
         if (mesaOpt.isEmpty()) {
@@ -189,8 +181,6 @@ public class ApiController {
         }
     }
 
-    // RF003 — Registra la selección de tipo de servicio del cliente.
-// No crea sesión ni renueva la vigencia de la actual.
     @PutMapping("/mesa/sesion/tipo-servicio")
     public ResponseEntity<?> registrarTipoServicio(@RequestParam String token,
                                                    @RequestParam(required = false) String tipo) {
@@ -198,7 +188,6 @@ public class ApiController {
             String registrado = sesionMesaService.registrarTipoServicio(token, tipo);
             return ResponseEntity.ok(Map.of("tipoServicio", registrado));
         } catch (IllegalArgumentException e) {
-            // "Tipo de servicio inválido."
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).body(Map.of(
@@ -208,16 +197,13 @@ public class ApiController {
         }
     }
 
-    // RF003 — Consulta el tipo de servicio registrado en la sesión.
     @GetMapping("/mesa/sesion/tipo-servicio")
     public ResponseEntity<?> obtenerTipoServicio(@RequestParam String token) {
-        // HashMap porque el valor puede ser null (cliente aún sin confirmar)
         Map<String, Object> datos = new HashMap<>();
         datos.put("tipoServicio", sesionMesaService.obtenerTipoServicio(token).orElse(null));
         return ResponseEntity.ok(datos);
     }
 
-    // RF022 - Valida la sesión temporal. Responde 401 si expiró.
     @GetMapping("/mesa/sesion/estado")
     public ResponseEntity<?> estadoSesion(@RequestParam String token) {
         boolean valida = sesionMesaService.validarSesion(token);
@@ -233,7 +219,6 @@ public class ApiController {
         return ResponseEntity.ok(Map.of("valida", true));
     }
 
-    // Tarea 3: Generar sesión temporal asociada a la mesa
     @PostMapping("/mesa/sesion")
     public ResponseEntity<?> crearSesionMesa(@RequestBody Map<String, String> body) {
         String idMesa = body.get("idMesa");
@@ -251,7 +236,6 @@ public class ApiController {
         return ResponseEntity.ok(response);
     }
 
-    // Tarea 4: Validar sesión (verifica inactividad de 15 minutos)
     @GetMapping("/mesa/sesion/validar")
     public ResponseEntity<?> validarSesion(@RequestParam String token) {
         boolean valida = sesionMesaService.validarSesion(token);
@@ -266,7 +250,6 @@ public class ApiController {
         }
     }
 
-    // Cerrar sesión de mesa
     @PostMapping("/mesa/sesion/cerrar")
     public ResponseEntity<?> cerrarSesionMesa(@RequestBody Map<String, String> body) {
         String token = body.get("token");

@@ -9,32 +9,34 @@ import com.restaurant.app.services.UserService;
 
 import jakarta.servlet.http.HttpSession;
 
-import java.util.Optional;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.lang.NonNull;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.lang.NonNull;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/users")
 public class UserController {
 
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
+    private final UsuarioContextService usuarioContextService;
+    private final UserRepository userRepository;
+    private final SucursalRepository sucursalRepository;
 
-    @Autowired
-    private UsuarioContextService usuarioContextService;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private SucursalRepository sucursalRepository;
+    public UserController(UserService userService,
+                          UsuarioContextService usuarioContextService,
+                          UserRepository userRepository,
+                          SucursalRepository sucursalRepository) {
+        this.userService = userService;
+        this.usuarioContextService = usuarioContextService;
+        this.userRepository = userRepository;
+        this.sucursalRepository = sucursalRepository;
+    }
 
     private boolean esSuperadmin(Usuario u) {
         return "SUPERADMIN".equals(u.getRol());
@@ -48,16 +50,6 @@ public class UserController {
         return ResponseEntity.status(403).build();
     }
 
-    // ------------------------------------------------------------------
-    // Listados
-    // ------------------------------------------------------------------
-
-    /**
-     * Lista usuarios visibles según el alcance del solicitante.
-     *  · SUPERADMIN   → empleados de todas las sucursales de su restaurante
-     *  · ADMINISTRADOR → empleados de su propia sucursal
-     *  · CLIENTE      → 403
-     */
     @GetMapping
     public ResponseEntity<?> getUsers(HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
@@ -75,18 +67,15 @@ public class UserController {
 
             List<Usuario> todos = userService.getUsuariosConSucursal();
 
-            // ADMINISTRADOR: solo empleados operativos; nunca ADMINISTRADOR,
-            // SUPERADMIN ni CLIENTE
             List<Usuario> filtrados = todos.stream()
                     .filter(u -> !"CLIENTE".equals(u.getRol()))
                     .filter(u -> !esSuperadmin(u))
                     .filter(u -> !"ADMINISTRADOR".equals(u.getRol()) || esSuperadmin(usuarioActual))
                     .toList();
 
-            // ADMINISTRADOR: acotar a su sucursal
             if (!esSuperadmin(usuarioActual) && ctx.getSucursalId() != null) {
-                Long sucursalAdmin = ctx.getSucursalId();
-                List<Long> empleadosDeSucursal = usuarioContextService.listarIdsEmpleadosDeSucursal(sucursalAdmin);
+                UUID sucursalAdmin = ctx.getSucursalId();
+                List<UUID> empleadosDeSucursal = usuarioContextService.listarIdsEmpleadosDeSucursal(sucursalAdmin);
 
                 filtrados = filtrados.stream()
                         .filter(u -> {
@@ -106,7 +95,7 @@ public class UserController {
 
     @GetMapping("/search")
     public ResponseEntity<?> consultarUsuario(
-            @RequestParam @NonNull Long id,
+            @RequestParam @NonNull UUID id,
             HttpSession session) {
 
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
@@ -124,10 +113,6 @@ public class UserController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    /**
-     * Sucursales que el solicitante puede asignar.
-     * ADMINISTRADOR solo ve la suya; SUPERADMIN ve todas las de su restaurante.
-     */
     @GetMapping("/sucursales")
     public ResponseEntity<?> listarSucursales(HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
@@ -143,9 +128,11 @@ public class UserController {
         try {
             UsuarioContextService.UsuarioContext ctx = usuarioContextService.obtenerContexto(usuarioActual);
 
-            if (ctx.getSucursalId() != null) {
+            UUID sucursalSolicitada = ctx.getSucursalId();
+
+            if (sucursalSolicitada != null) {
                 return ResponseEntity.ok(
-                        sucursalRepository.findById(ctx.getSucursalId()).map(List::of).orElseGet(List::of));
+                        sucursalRepository.findById(sucursalSolicitada).map(List::of).orElseGet(List::of));
             }
 
             return ResponseEntity.ok(sucursalRepository.findByRestauranteId(ctx.getRestauranteId()));
@@ -154,22 +141,8 @@ public class UserController {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Crear usuario
-    // ------------------------------------------------------------------
-
-    /**
-     * Creación de usuarios con reglas:
-     *  · SUPERADMIN puede crear ADMINISTRADOR y empleados, elige sucursal.
-     *  · ADMINISTRADOR solo crea empleados operativos, en SU sucursal.
-     *  · ADMINISTRADOR nunca crea ADMINISTRADOR.
-     */
-    /**
-     * Sucursal actualmente asignada a un usuario.
-     * Permite al frontend mostrar el valor real al editar (RF018).
-     */
 @GetMapping("/{id}/sucursal")
-    public ResponseEntity<?> sucursalDeUsuario(@PathVariable Long id, HttpSession session) {
+    public ResponseEntity<?> sucursalDeUsuario(@PathVariable @NonNull UUID id, HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
 
         if (usuarioActual == null) {
@@ -185,12 +158,16 @@ public class UserController {
             return ResponseEntity.notFound().build();
         }
 
+        try {
+            usuarioContextService.exigirUsuarioEnContexto(usuarioActual, objetivo.get());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
         if (esSuperadmin(objetivo.get())) {
             return ResponseEntity.status(403)
                     .body(Map.of("error", "No se puede consultar la asignación de un SUPERADMIN."));
         }
 
-        // HashMap porque sucursalId puede ser null y Map.of() no admite valores nulos
         Map<String, Object> datos = new HashMap<>();
         datos.put("usuarioId", objetivo.get().getId());
         datos.put("sucursalId", userService.obtenerSucursalAsignada(objetivo.get()));
@@ -204,7 +181,7 @@ public class UserController {
             @RequestParam String rol,
             @RequestParam String celular,
             @RequestParam String direccion,
-            @RequestParam(required = false) Long sucursalId,
+            @RequestParam(required = false) UUID sucursalId,
             HttpSession session) {
 
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
@@ -217,7 +194,6 @@ public class UserController {
             return noAutorizado();
         }
 
-        // Usuario duplicado → 409, no 403
         if (userRepository.findByNombre(nombre).isPresent()) {
             return ResponseEntity.status(409)
                     .body(Map.of("error", "No se puede crear el usuario porque ya existe."));
@@ -236,11 +212,9 @@ public class UserController {
         try {
             UsuarioContextService.UsuarioContext ctx = usuarioContextService.obtenerContexto(usuarioActual);
 
-            Long sucursalEfectiva = ctx.getSucursalId();
+            UUID sucursalEfectiva = ctx.getSucursalId();
 
             if (esSuperadmin(usuarioActual)) {
-                // La sucursal es opcional: se puede crear un ADMINISTRADOR
-                // sin asignar y asignarlo más adelante (RF018).
                 if (sucursalId != null) {
                     Sucursal sucursal = sucursalRepository.findById(sucursalId)
                             .orElseThrow(() -> new IllegalArgumentException("La sucursal indicada no existe."));
@@ -253,16 +227,13 @@ public class UserController {
                     sucursalEfectiva = null;
                 }
             } else {
-                // ADMINISTRADOR: se ignora cualquier sucursalId enviado
                 if (sucursalId != null && !sucursalId.equals(ctx.getSucursalId())) {
                     return ResponseEntity.status(403)
                             .body(Map.of("error", "No puede asignar usuarios a otra sucursal."));
                 }
             }
 
-            // Solo CLIENTE queda sin sucursal. El resto usa la sucursal resuelta,
-   // que puede ser null si el SUPERADMIN creó al usuario sin asignar.
-            Long sucursalARegistrar = "CLIENTE".equals(rol) ? null : sucursalEfectiva;
+            UUID sucursalARegistrar = "CLIENTE".equals(rol) ? null : sucursalEfectiva;
 
             return ResponseEntity.ok(
                     userService.createUser(nombre, contraseña, rol, celular, direccion, sucursalARegistrar));
@@ -273,18 +244,14 @@ public class UserController {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Modificar usuario
-    // ------------------------------------------------------------------
-
     @PostMapping("/edit")
     public ResponseEntity<?> editarUsuario(
-            @RequestParam @NonNull Long id,
+            @RequestParam @NonNull UUID id,
             @RequestParam String nombre,
             @RequestParam String rol,
             @RequestParam String celular,
             @RequestParam String direccion,
-            @RequestParam(required = false) Long sucursalId,
+            @RequestParam(required = false) UUID sucursalId,
             @RequestParam(defaultValue = "false") boolean quitarSucursal,
             HttpSession session) {
 
@@ -298,13 +265,11 @@ public class UserController {
             return noAutorizado();
         }
 
-        // No se puede cambiar a SUPERADMIN por este endpoint
         if ("SUPERADMIN".equals(rol)) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "No se puede asignar el rol SUPERADMIN desde este endpoint."));
         }
 
-        // ADMINISTRADOR no puede crear/convertir en ADMINISTRADOR
         if ("ADMINISTRADOR".equals(rol) && !esSuperadmin(usuarioActual)) {
             return ResponseEntity.status(403)
                     .body(Map.of("error", "Solo el SUPERADMIN puede crear ADMINISTRADORES."));
@@ -315,13 +280,16 @@ public class UserController {
             return ResponseEntity.notFound().build();
         }
 
-        // Nadie puede degradar al SUPERADMIN
+        try {
+            usuarioContextService.exigirUsuarioEnContexto(usuarioActual, objetivo.get());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
         if (esSuperadmin(objetivo.get())) {
             return ResponseEntity.status(403)
                     .body(Map.of("error", "No se puede modificar un SUPERADMIN."));
         }
 
-        // ADMINISTRADOR no puede modificar a otro ADMINISTRADOR
         if (!esSuperadmin(usuarioActual)
                 && ("ADMINISTRADOR".equals(objetivo.get().getRol())
                     || objetivo.get().getId().equals(usuarioActual.getId()))) {
@@ -329,7 +297,6 @@ public class UserController {
                     .body(Map.of("error", "No tiene permisos para modificar este usuario."));
         }
 
-        // ADMINISTRADOR no puede mover empleados a otra sucursal
         if (!esSuperadmin(usuarioActual) && sucursalId != null) {
             try {
                 UsuarioContextService.UsuarioContext ctx = usuarioContextService.obtenerContexto(usuarioActual);
@@ -342,9 +309,24 @@ public class UserController {
             }
         }
 
+        if (sucursalId != null) {
+            try {
+                usuarioContextService.exigirSucursalDelContexto(usuarioActual, sucursalId);
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            } catch (IllegalStateException e) {
+                return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+            }
+        }
+
         try {
-            // ADMINISTRADOR nunca envía sucursalId ni quitarSucursal: se ignoran
-            Long sucursalEfectiva = esSuperadmin(usuarioActual) ? sucursalId : null;
+            usuarioContextService.exigirUsuarioEnContexto(usuarioActual, objetivo.get());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
+
+        try {
+            UUID sucursalEfectiva = esSuperadmin(usuarioActual) ? sucursalId : null;
             boolean quitarEfectivo = esSuperadmin(usuarioActual) && quitarSucursal;
             userService.updateUser(id, nombre, rol, celular, direccion, sucursalEfectiva, quitarEfectivo);
             return ResponseEntity.ok().build();
@@ -356,13 +338,9 @@ public class UserController {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Activar / Suspender
-    // ------------------------------------------------------------------
-
     @PostMapping("/toggle")
     public ResponseEntity<?> cambiarEstadoUsuario(
-            @RequestParam @NonNull Long id,
+            @RequestParam @NonNull UUID id,
             HttpSession session) {
 
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
@@ -380,13 +358,16 @@ public class UserController {
             return ResponseEntity.notFound().build();
         }
 
-        // El SUPERADMIN no se puede suspender a sí mismo ni ser modificado
+        try {
+            usuarioContextService.exigirUsuarioEnContexto(usuarioActual, objetivo.get());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
         if (esSuperadmin(objetivo.get())) {
             return ResponseEntity.status(403)
                     .body(Map.of("error", "No se puede cambiar el estado de un SUPERADMIN."));
         }
 
-        // ADMINISTRADOR no toca a otros ADMINISTRADORES ni a sí mismo
         if (!esSuperadmin(usuarioActual)
                 && ("ADMINISTRADOR".equals(objetivo.get().getRol())
                     || objetivo.get().getId().equals(usuarioActual.getId()))) {
@@ -394,7 +375,6 @@ public class UserController {
                     .body(Map.of("error", "No tiene permisos sobre este usuario."));
         }
 
-        // ADMINISTRADOR solo opera sobre empleados de su sucursal
         if (!esSuperadmin(usuarioActual)) {
             try {
                 UsuarioContextService.UsuarioContext ctx = usuarioContextService.obtenerContexto(usuarioActual);
@@ -413,13 +393,9 @@ public class UserController {
         return ResponseEntity.ok().build();
     }
 
-    // ------------------------------------------------------------------
-    // Eliminar
-    // ------------------------------------------------------------------
-
     @PostMapping("/delete")
     public ResponseEntity<?> eliminarUsuario(
-            @RequestParam @NonNull Long id,
+            @RequestParam @NonNull UUID id,
             HttpSession session) {
 
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
@@ -438,6 +414,11 @@ public class UserController {
             return ResponseEntity.notFound().build();
         }
 
+        try {
+            usuarioContextService.exigirUsuarioEnContexto(usuarioActual, objetivo.get());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
         if (esSuperadmin(objetivo.get())) {
             return ResponseEntity.status(403)
                     .body(Map.of("error", "No se puede eliminar un SUPERADMIN."));

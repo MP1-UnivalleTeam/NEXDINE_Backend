@@ -9,6 +9,7 @@ import com.restaurant.app.repository.ProductoSucursalRepository;
 
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
 import java.util.*;
 
 @Service
@@ -26,40 +27,63 @@ public class MenuService {
         this.productoSucursalRepository = productoSucursalRepository;
     }
 
-    /**
-     * Menú de una sucursal concreta: solo productos con relación en
-     * producto_sucursal para esa sucursal y con disponible = true.
-     *
-     * Refleja RF007 (disponibilidad por sucursal).
-     */
-    public Map<String, Object> getMenuPorSucursal(Long sucursalId) {
+    private static final String SIN_CATEGORIA = "Sin categoría";
+
+    private Map<UUID, String> cargarNombresCategoria(List<Producto> productos) {
+        List<UUID> ids = productos.stream()
+                .map(producto -> producto.getCategoriaId())
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+
+        if (ids.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+
+        Map<UUID, String> nombres = new HashMap<>();
+        for (Categoria categoria : categoriaRepository.findByIdIn(ids)) {
+            nombres.put(categoria.getId(), categoria.getNombre());
+        }
+        return nombres;
+    }
+
+    private Map<UUID, Boolean> cargarDisponibilidadOperacional(List<Producto> productos) {
+        List<UUID> ids = productos.stream()
+                .map(producto -> producto.getId())
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        if (ids.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+
+        Map<UUID, Boolean> resultado = new HashMap<>();
+        for (ProductoSucursal ps : productoSucursalRepository.findByProductoIdIn(ids)) {
+            resultado.merge(ps.getProductoId(), ps.isDisponible(),
+                    (existente, nuevo) -> existente || nuevo);
+        }
+        return resultado;
+    }
+
+    public Map<String, Object> getMenuPorSucursal(UUID sucursalId) {
         List<Producto> todos = productoRepository.findAll();
 
         List<Producto> productos = todos.stream()
-                .filter(Producto::isDisponible)
+                .filter(producto -> producto.isDisponible())
                 .filter(p -> productoSucursalRepository
                         .findByProductoIdAndSucursalId(p.getId(), sucursalId)
-                        .map(ProductoSucursal::isDisponible)
+                        .map(relacion -> relacion.isDisponible())
                         .orElse(false))
                 .toList();
 
         return construirMenu(productos);
     }
 
-    /**
-     * Menú público de un restaurante, filtrado por su catálogo.
-     * No requiere sesión ni mesa.
-     */
-    public Map<String, Object> getMenuPublicoPorRestaurante(Long restauranteId) {
+    public Map<String, Object> getMenuPublicoPorRestaurante(UUID restauranteId) {
         List<Producto> productos = productoRepository.findDisponiblesByRestaurante(restauranteId);
         return construirMenu(productos);
     }
 
-    /**
-     * Obtiene el menú disponible para el cliente.
-     * Retorna elementos agrupados por categoría para que el frontend
-     * pueda mostrar nombre, descripción, precio, imagen y disponibilidad.
-     */
     public Map<String, Object> getMenuDisponible() {
         List<Producto> productos = productoRepository.findDisponibles();
         return construirMenu(productos);
@@ -67,7 +91,13 @@ public class MenuService {
 
     private Map<String, Object> construirMenu(List<Producto> productos) {
 
-        // Construir lista de elementos con info de categoría
+        if (productos.isEmpty()) {
+            return Map.of("categorias", List.of());
+        }
+
+        Map<UUID, String> nombresCategoria = cargarNombresCategoria(productos);
+        Map<UUID, Boolean> disponibilidadOperacional = cargarDisponibilidadOperacional(productos);
+
         List<Map<String, Object>> items = new ArrayList<>();
 
         for (Producto p : productos) {
@@ -77,36 +107,23 @@ public class MenuService {
             item.put("descripcion", p.getDescripcion());
             item.put("precio", p.getPrecio());
             item.put("imagen", p.getImagen());
+            String categoria = (p.getCategoriaId() == null)
+                    ? SIN_CATEGORIA
+                    : nombresCategoria.getOrDefault(p.getCategoriaId(), SIN_CATEGORIA);
+            item.put("categoria", categoria);
 
-            // Resolver nombre de categoría
-            String categoriaNombre = "Sin categoría";
-            if (p.getCategoriaId() != null) {
-                Categoria cat = categoriaRepository.findById(p.getCategoriaId()).orElse(null);
-                if (cat != null) {
-                    categoriaNombre = cat.getNombre();
-                }
-            }
-            item.put("categoria", categoriaNombre);
-
-            // Disponibilidad: general (producto) + operacional (producto_sucursal)
-            boolean operacional = true;
-            List<ProductoSucursal> psList = productoSucursalRepository.findByProductoId(p.getId());
-            if (!psList.isEmpty()) {
-                operacional = psList.stream().anyMatch(ProductoSucursal::isDisponible);
-            }
+            boolean operacional = disponibilidadOperacional.getOrDefault(p.getId(), Boolean.TRUE);
             item.put("disponible", p.isDisponible() && operacional);
 
             items.add(item);
         }
 
-        // Agrupar por categoría
         Map<String, List<Map<String, Object>>> porCategoria = new LinkedHashMap<>();
         for (Map<String, Object> item : items) {
             String cat = (String) item.get("categoria");
             porCategoria.computeIfAbsent(cat, k -> new ArrayList<>()).add(item);
         }
 
-        // Construir respuesta
         Map<String, Object> response = new HashMap<>();
         List<Map<String, Object>> categoriasResponse = new ArrayList<>();
 

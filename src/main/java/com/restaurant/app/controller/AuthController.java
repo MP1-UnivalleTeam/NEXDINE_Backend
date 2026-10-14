@@ -5,7 +5,6 @@ import com.restaurant.app.services.UserService;
 
 import jakarta.servlet.http.HttpSession;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,8 +14,11 @@ import java.util.Optional;
 @RestController
 public class AuthController {
 
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
+
+    public AuthController(UserService userService) {
+        this.userService = userService;
+    }
 
     @PostMapping("/login")
     public ResponseEntity<?> iniciarSesion(
@@ -24,7 +26,6 @@ public class AuthController {
             @RequestParam String contraseña,
             HttpSession session) {
 
-        // Crea el administrador inicial si todavía no existe.
         userService.initAdmin();
 
         Optional<Usuario> usuarioOpt = userService.login(nombre, contraseña);

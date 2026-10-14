@@ -2,21 +2,24 @@ package com.restaurant.app.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import org.springframework.lang.NonNull;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "sucursales")
 @Data
-public class Sucursal {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@EqualsAndHashCode(callSuper = true)
+public class Sucursal extends EntidadUuid {
 
     @Column(name = "restaurante_id", nullable = false)
-    private Long restauranteId;
+    @Getter(onMethod_ = @__(@NonNull))
+    private UUID restauranteId;
 
     @Column(nullable = false)
+    @Getter(onMethod_ = @__(@NonNull))
     private String nombre;
 
     private String direccion;

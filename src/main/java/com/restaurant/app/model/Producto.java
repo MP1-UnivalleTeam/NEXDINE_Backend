@@ -2,16 +2,17 @@ package com.restaurant.app.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import org.springframework.lang.NonNull;
 import java.math.BigDecimal;
+import java.util.UUID;
 
 @Entity
 @Table(name = "productos")
 @Data
-public class Producto {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@EqualsAndHashCode(callSuper = true)
+public class Producto extends EntidadUuid {
 
     @Column(nullable = false, length = 150)
     private String nombre;
@@ -25,22 +26,25 @@ public class Producto {
     @Column(columnDefinition = "TEXT")
     private String imagen;
 
+    @Column(name = "imagen_public_id", columnDefinition = "TEXT")
+    private String imagenPublicId;
+
+    @Column(unique = true, length = 40)
+    private String sku;
+
+    @Column(name = "nombre_normalizado", columnDefinition = "TEXT")
+    private String nombreNormalizado;
+
     @Column(nullable = false)
     private boolean disponible = true;
 
     @Column(name = "restaurante_id", nullable = false)
-    private Long restauranteId;
+    @Getter(onMethod_ = @__(@NonNull))
+    private UUID restauranteId;
 
     @Column(name = "categoria_id")
-    private Long categoriaId;
+    private UUID categoriaId;
 
-    /**
-     * Disponibilidad del producto en la sucursal del usuario autenticado.
-     * Solo para presentación: NO se persiste en la tabla productos.
-     * Se calcula desde producto_sucursal (RF007).
-     *
-     * null = el usuario no tiene contexto de sucursal (SUPERADMIN)
-     */
     @Transient
     private Boolean disponibleEnMiSucursal;
 }

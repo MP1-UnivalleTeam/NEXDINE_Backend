@@ -2,8 +2,11 @@ package com.restaurant.app.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.lang.NonNull;
 import java.io.Serializable;
+import java.util.UUID;
 
 @Entity
 @Table(name = "administrador_sucursal")
@@ -13,16 +16,18 @@ public class AdministradorSucursal {
 
     @Id
     @Column(name = "administrador_id", nullable = false)
-    private Long administradorId;
+    @Getter(onMethod_ = @__(@NonNull))
+    private UUID administradorId;
 
     @Id
     @Column(name = "sucursal_id", nullable = false)
-    private Long sucursalId;
+    @Getter(onMethod_ = @__(@NonNull))
+    private UUID sucursalId;
 
     public AdministradorSucursal() {
     }
 
-    public AdministradorSucursal(Long administradorId, Long sucursalId) {
+    public AdministradorSucursal(UUID administradorId, UUID sucursalId) {
         this.administradorId = administradorId;
         this.sucursalId = sucursalId;
     }
@@ -30,7 +35,7 @@ public class AdministradorSucursal {
     @Data
     @NoArgsConstructor
     public static class AdministradorSucursalId implements Serializable {
-        private Long administradorId;
-        private Long sucursalId;
+        private UUID administradorId;
+        private UUID sucursalId;
     }
 }

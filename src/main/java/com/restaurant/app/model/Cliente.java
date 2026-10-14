@@ -10,22 +10,18 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class Cliente extends Usuario {
-    
+
     private String idCliente;
 
     public void realizarPedido() {
-        // TODO: Implementar realización de pedido
     }
 
     public void cancelarPedido() {
-        // TODO: Implementar cancelación de pedido
     }
 
     public void guardarFavorito() {
-        // TODO: Implementar guardado en favoritos
     }
 
     public void aplicarCupon() {
-        // TODO: Implementar aplicación de cupón
     }
 }

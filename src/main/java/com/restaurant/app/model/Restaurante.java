@@ -2,27 +2,26 @@ package com.restaurant.app.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "restaurantes")
 @Data
-public class Restaurante {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@EqualsAndHashCode(callSuper = true)
+public class Restaurante extends EntidadUuid {
 
     @Column(nullable = false)
     private String nombre;
 
-    /**
-     * Identificador URL-safe del restaurante para el enlace público /menu/{slug}.
-     * Se genera una sola vez a partir del nombre y NO cambia aunque el nombre
-     * se modifique, para no romper enlaces ya compartidos.
-     */
     @Column(unique = true, length = 100)
     private String slug;
+
+    @Column(unique = true, length = 20)
+    private String codigo;
+
+    @Column(length = 10)
+    private String iniciales;
 
     private String descripcion;
 

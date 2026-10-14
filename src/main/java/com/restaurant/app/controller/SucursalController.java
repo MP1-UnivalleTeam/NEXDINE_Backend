@@ -6,23 +6,23 @@ import com.restaurant.app.services.SucursalService;
 
 import jakarta.servlet.http.HttpSession;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
-/**
- * Gestión de sucursales — solo SUPERADMIN.
- * El restaurante se obtiene del contexto; nunca se recibe desde el frontend.
- */
 @RestController
 @RequestMapping("/sucursales")
 public class SucursalController {
 
-    @Autowired
-    private SucursalService sucursalService;
+    private final SucursalService sucursalService;
+
+    public SucursalController(SucursalService sucursalService) {
+        this.sucursalService = sucursalService;
+    }
 
     private ResponseEntity<?> requiereSuperadmin(HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
@@ -78,7 +78,7 @@ public class SucursalController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> actualizar(@PathVariable Long id,
+    public ResponseEntity<?> actualizar(@PathVariable @NonNull UUID id,
                                         @RequestParam String nombre,
                                         @RequestParam(required = false) String direccion,
                                         @RequestParam(required = false) String telefono,
@@ -100,7 +100,7 @@ public class SucursalController {
     }
 
     @PostMapping("/{id}/estado")
-    public ResponseEntity<?> cambiarEstado(@PathVariable Long id,
+    public ResponseEntity<?> cambiarEstado(@PathVariable @NonNull UUID id,
                                           @RequestParam boolean activa,
                                           HttpSession session) {
         ResponseEntity<?> unauthorized = requiereSuperadmin(session);
@@ -120,7 +120,7 @@ public class SucursalController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> eliminar(@PathVariable Long id, HttpSession session) {
+    public ResponseEntity<?> eliminar(@PathVariable @NonNull UUID id, HttpSession session) {
         ResponseEntity<?> unauthorized = requiereSuperadmin(session);
         if (unauthorized != null) {
             return unauthorized;
@@ -134,7 +134,6 @@ public class SucursalController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
-            // Relaciones activas: mensaje explicativo, no error genérico
             return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         }
     }

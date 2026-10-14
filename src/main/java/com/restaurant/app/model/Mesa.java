@@ -2,34 +2,29 @@ package com.restaurant.app.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.lang.NonNull;
+import java.util.UUID;
 
-/**
- * Mapeo de la tabla mesas.
- * Una mesa pertenece a una sucursal y se identifica en el QR
- * mediante un codigo opaco (no su id numerico).
- */
 @Entity
 @Table(name = "mesas")
 @Data
 @NoArgsConstructor
-public class Mesa {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@EqualsAndHashCode(callSuper = true)
+public class Mesa extends EntidadUuid {
 
     @Column(name = "sucursal_id", nullable = false)
-    private Long sucursalId;
+    @Getter(onMethod_ = @__(@NonNull))
+    private UUID sucursalId;
 
     @Column(nullable = false, length = 50)
+    @Getter(onMethod_ = @__(@NonNull))
     private String nombre;
 
-    /**
-     * Codigo opaco que viaja dentro del QR.
-     * Ejemplo: mesa-7f3a9c2b
-     */
     @Column(nullable = false, length = 20, unique = true)
+    @Getter(onMethod_ = @__(@NonNull))
     private String codigo;
 
     @Column(nullable = false)

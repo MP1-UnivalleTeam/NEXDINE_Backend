@@ -3,16 +3,16 @@ package com.restaurant.app.model;
 import jakarta.persistence.*;
 import jakarta.persistence.Transient;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+
+import java.util.UUID;
 
 @Entity
 @Table(name = "usuarios")
 @Inheritance(strategy = InheritanceType.JOINED)
 @Data
-public abstract class Usuario {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@EqualsAndHashCode(callSuper = true)
+public abstract class Usuario extends EntidadUuid {
 
     private String nombre;
     private String celular;
@@ -24,18 +24,13 @@ public abstract class Usuario {
 
     private boolean estado = true;
 
-    /**
-     * Sucursal actualmente asignada al usuario.
-     * NO se persiste: se resuelve desde administrador_sucursal o empleado_sucursal
-     * y se expone en el JSON para que el frontend muestre el valor real (RF018).
-     */
     @Transient
-    private Long sucursalId;
-    
+    private UUID sucursalId;
+
     public void iniciarSesion() {}
     public void cerrarSesion() {}
     public void editarPerfil() {}
     public void recibirNotificacion() {}
 
-    
+
 }

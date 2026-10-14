@@ -4,15 +4,13 @@ import com.restaurant.app.model.Categoria;
 import com.restaurant.app.model.Usuario;
 import com.restaurant.app.repository.CategoriaRepository;
 
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
 import java.util.List;
 
-/**
- * Gestión de categorías del restaurante (solo SUPERADMIN).
- * El restaurante se obtiene siempre del contexto autenticado.
- */
 @Service
 public class CategoriaService {
 
@@ -26,19 +24,18 @@ public class CategoriaService {
     }
 
     public List<Categoria> listar(Usuario usuario) {
-        Long restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
+        UUID restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
         return categoriaRepository.findByRestauranteId(restauranteId);
     }
 
-    /** Categorías activas: alimenta el select del formulario de producto. */
     public List<Categoria> listarActivas(Usuario usuario) {
-        Long restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
+        UUID restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
         return categoriaRepository.findByRestauranteIdAndActivaTrue(restauranteId);
     }
 
     @Transactional
     public Categoria crear(Usuario usuario, String nombre, String descripcion) {
-        Long restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
+        UUID restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
 
         if (nombre == null || nombre.isBlank()) {
             throw new IllegalArgumentException("El nombre de la categoría es obligatorio.");
@@ -60,7 +57,7 @@ public class CategoriaService {
     }
 
     @Transactional
-    public Categoria actualizar(Usuario usuario, Long categoriaId,
+    public Categoria actualizar(Usuario usuario, @NonNull UUID categoriaId,
                                 String nombre, String descripcion, Boolean activa) {
         Categoria categoria = obtenerCategoriaDelRestaurante(usuario, categoriaId);
 
@@ -85,8 +82,8 @@ public class CategoriaService {
         return categoriaRepository.save(categoria);
     }
 
-    private Categoria obtenerCategoriaDelRestaurante(Usuario usuario, Long categoriaId) {
-        Long restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
+    private Categoria obtenerCategoriaDelRestaurante(Usuario usuario, @NonNull UUID categoriaId) {
+        UUID restauranteId = usuarioContextService.obtenerContexto(usuario).getRestauranteId();
 
         Categoria categoria = categoriaRepository.findById(categoriaId)
                 .orElseThrow(() -> new IllegalArgumentException("La categoría no existe."));

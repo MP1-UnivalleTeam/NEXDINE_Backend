@@ -2,7 +2,6 @@ package com.restaurant.app.config;
 
 import com.restaurant.app.model.SesionMesa;
 import com.restaurant.app.repository.SesionMesaRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -12,10 +11,13 @@ import java.util.List;
 @Component
 public class SesionScheduler {
 
-    @Autowired
-    private SesionMesaRepository sesionMesaRepository;
+    private final SesionMesaRepository sesionMesaRepository;
 
     private static final int MINUTOS_INACTIVIDAD = 15;
+
+    public SesionScheduler(SesionMesaRepository sesionMesaRepository) {
+        this.sesionMesaRepository = sesionMesaRepository;
+    }
 
     @Scheduled(fixedRate = 60000)
     public void expirarSesionesInactivas() {
