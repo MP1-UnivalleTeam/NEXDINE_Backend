@@ -203,10 +203,11 @@ Las operaciones de administración de usuarios requieren una sesión iniciada co
 
 ### Pedidos, mesas y favoritos
 
-Antes de arrancar la versión que incorpora pedidos por mesa y favoritos, ejecutar
-una vez el script `src/main/resources/db/migrations/002_pedidos_mesas_favoritos.sql`
-en PostgreSQL. El backend usa `spring.jpa.hibernate.ddl-auto=validate`, por lo
-que no crea automáticamente estas columnas y tablas.
+Flyway aplica automáticamente las migraciones de `src/main/resources/db/migration/`
+al arrancar, antes de que Hibernate valide el esquema. En bases existentes sin
+historial de Flyway, se crea una línea base en la versión 1 y se aplican las
+migraciones posteriores. Hibernate conserva `spring.jpa.hibernate.ddl-auto=validate`:
+el esquema se actualiza únicamente mediante migraciones versionadas.
 
 La tasa de impuestos se configura en porcentaje mediante
 `APP_PEDIDOS_TASA_IMPUESTO`; por defecto es `0`. Los impuestos se calculan y
