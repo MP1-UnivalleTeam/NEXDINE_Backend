@@ -46,11 +46,23 @@ public class Pedido extends EntidadUuid {
     @Column(precision = 10, scale = 2)
     private BigDecimal cargos = BigDecimal.ZERO;
 
+    @Column(name = "impuestos", nullable = false, precision = 10, scale = 2)
+    private BigDecimal impuestos = BigDecimal.ZERO;
+
+    @Column(name = "tasa_impuesto", nullable = false, precision = 5, scale = 2)
+    private BigDecimal tasaImpuesto = BigDecimal.ZERO;
+
     @Column(precision = 10, scale = 2)
     private BigDecimal propina = BigDecimal.ZERO;
 
     @Column(precision = 10, scale = 2)
     private BigDecimal total = BigDecimal.ZERO;
+
+    @Column(name = "mesa_id")
+    private UUID mesaId;
+
+    @Column(name = "sucursal_id")
+    private UUID sucursalId;
 
     @Column(name = "cupon_codigo", length = 50)
     private String cuponCodigo;

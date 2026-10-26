@@ -35,12 +35,17 @@ public class MesaController {
             return ResponseEntity.status(401).build();
         }
 
-        if (!"ADMINISTRADOR".equals(usuarioActual.getRol()) && !"SUPERADMIN".equals(usuarioActual.getRol())) {
+        if (!"ADMINISTRADOR".equals(usuarioActual.getRol())
+                && !"SUPERADMIN".equals(usuarioActual.getRol())
+                && !"MESERO".equals(usuarioActual.getRol())) {
             return ResponseEntity.status(403).build();
         }
 
         try {
             List<Mesa> mesas = mesaService.listarMesas(usuarioActual, sucursalId);
+            if ("MESERO".equals(usuarioActual.getRol())) {
+                mesas = mesas.stream().filter(Mesa::isActiva).toList();
+            }
             return ResponseEntity.ok(mesas);
         } catch (IllegalStateException e) {
             return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));

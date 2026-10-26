@@ -15,6 +15,8 @@ public interface ProductoSucursalRepository extends JpaRepository<ProductoSucurs
     List<ProductoSucursal> findBySucursalId(UUID sucursalId);
     Optional<ProductoSucursal> findByProductoIdAndSucursalId(UUID productoId, UUID sucursalId);
 
+    boolean existsByProductoIdAndSucursalIdAndDisponibleTrue(UUID productoId, UUID sucursalId);
+
     List<ProductoSucursal> findByProductoIdIn(Collection<UUID> productoIds);
 
     void deleteByProductoId(UUID productoId);

@@ -73,6 +73,7 @@ Opcionales:
 |---|---|---|
 | `CLOUDINARY_FOLDER` | `nexdine/productos` | Carpeta destino de las imágenes |
 | `APP_IMAGEN_MAX_BYTES` | `5242880` | Tamaño máximo de imagen (5 MB) |
+| `APP_PEDIDOS_TASA_IMPUESTO` | `0` | Tasa porcentual de impuestos aplicada al subtotal después del descuento (0–100) |
 
 Si faltan las variables de Cloudinary, la aplicación **arranca con normalidad**:
 la subida de imágenes por archivo responde `503` con un mensaje que indica el
@@ -199,6 +200,50 @@ La migración de base de datos está en `archivos IA/migracion_sku_duplicados.sq
 | POST | `/users/toggle` | Activa o suspende un usuario |
 
 Las operaciones de administración de usuarios requieren una sesión iniciada con rol `ADMINISTRADOR`.
+
+### Pedidos, mesas y favoritos
+
+Antes de arrancar la versión que incorpora pedidos por mesa y favoritos, ejecutar
+una vez el script `src/main/resources/db/migrations/002_pedidos_mesas_favoritos.sql`
+en PostgreSQL. El backend usa `spring.jpa.hibernate.ddl-auto=validate`, por lo
+que no crea automáticamente estas columnas y tablas.
+
+La tasa de impuestos se configura en porcentaje mediante
+`APP_PEDIDOS_TASA_IMPUESTO`; por defecto es `0`. Los impuestos se calculan y
+redondean a dos decimales sobre `max(subtotal - descuento, 0)`. El resumen
+incluye `subtotal`, `descuento`, `impuestos`, `tasaImpuesto`, `propina`,
+`cargos` y `total`.
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| GET | `/api/clientes/favoritos` | Cliente autenticado | Lista productos favoritos del perfil |
+| POST | `/api/clientes/favoritos/{productoId}` | Cliente autenticado | Guarda un producto disponible como favorito |
+| DELETE | `/api/clientes/favoritos/{productoId}` | Cliente autenticado | Quita un favorito |
+| GET | `/mesas` | Administrador, superadmin o mesero | Lista mesas disponibles para elegir |
+| POST | `/api/pedidos/manual` | Personal autenticado | Registra un pedido para una mesa y sus productos |
+| POST | `/api/pedidos/invitado?sucursalId={uuid}` | Público | Asocia un pedido en línea a la sucursal elegida (parámetro opcional) |
+| GET | `/api/pedidos/activos` | Personal autenticado | Lista pedidos activos de la sucursal/restaurante |
+| GET | `/api/pedidos/mesas/{mesaId}/pedidos` | Personal autenticado | Lista pedidos activos de una mesa |
+| PUT | `/api/pedidos/{pedidoId}/estado?estado=EN_PREPARACION` | Personal autenticado | Actualiza el estado del pedido |
+| GET | `/api/pedidos/activos/eventos` | Personal autenticado | Flujo SSE `pedido-actualizado` con cambios en tiempo real |
+
+El cuerpo de `POST /api/pedidos/manual` usa el formato:
+
+```json
+{
+  "mesaId": "uuid-de-mesa",
+  "nombre": "Cliente de mesa",
+  "telefono": "5551234567",
+  "observaciones": "Sin hielo",
+  "items": [
+    { "productoId": "uuid-de-producto", "cantidad": 2, "observaciones": "" }
+  ]
+}
+```
+
+Los estados aceptados son `PENDIENTE`, `CONFIRMADO`, `EN_PREPARACION`,
+`LISTO`, `ENTREGADO` y `CANCELADO`. Pedidos `ENTREGADO` y `CANCELADO` dejan
+de aparecer en la lista de activos.
 
 ## Estructura
 
