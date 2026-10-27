@@ -130,7 +130,8 @@ public class ApiController {
     }
 
     @GetMapping("/menu/{slug}")
-    public ResponseEntity<?> menuPublico(@PathVariable String slug) {
+    public ResponseEntity<?> menuPublico(@PathVariable String slug,
+                                         @RequestParam(required = false) UUID sucursalId) {
         Optional<Restaurante> restauranteOpt = restauranteRepository
                 .findBySlugAndActivoTrue(slug);
 
@@ -161,8 +162,23 @@ public class ApiController {
                 sucursalesResponse.add(item);
             }
             response.put("sucursales", sucursalesResponse);
-            response.put("sucursalId", sucursales.size() == 1 ? sucursales.get(0).getId() : null);
-            response.put("menu", menuService.getMenuPublicoPorRestaurante(restaurante.getId()).get("categorias"));
+            if (sucursalId == null) {
+                response.put("sucursalId", sucursales.size() == 1 ? sucursales.get(0).getId() : null);
+                response.put("menu", menuService.getMenuPublicoPorRestaurante(restaurante.getId()).get("categorias"));
+            } else {
+                Sucursal sucursalSeleccionada = sucursalRepository.findById(sucursalId).orElse(null);
+                if (sucursalSeleccionada == null
+                        || !restaurante.getId().equals(sucursalSeleccionada.getRestauranteId())
+                        || !sucursalSeleccionada.isActiva()) {
+                    return ResponseEntity.status(404).body(Map.of(
+                            "error", "Menú no disponible",
+                            "detalle", "La sucursal seleccionada no está disponible para este menú."
+                    ));
+                }
+                response.put("sucursalId", sucursalSeleccionada.getId());
+                response.put("sucursalNombre", sucursalSeleccionada.getNombre());
+                response.put("menu", menuService.getMenuPorSucursal(sucursalSeleccionada.getId()).get("categorias"));
+            }
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {

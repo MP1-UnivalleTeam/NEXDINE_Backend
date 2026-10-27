@@ -32,6 +32,7 @@ import java.util.UUID;
 @Service
 public class PedidoService {
 
+    private static final int MAX_OBSERVACION_ITEM = 500;
     private static final Set<String> ESTADOS_FINALES = Set.of("ENTREGADO", "CANCELADO");
     private static final Set<String> ESTADOS_VALIDOS = Set.of(
             "PENDIENTE", "CONFIRMADO", "EN_PREPARACION", "LISTO", "ENTREGADO", "CANCELADO");
@@ -158,7 +159,7 @@ public class PedidoService {
             item.setCantidad(linea.cantidad());
             item.setPrecioUnitario(producto.getPrecio());
             item.setAdicionalOpciones(BigDecimal.ZERO);
-            item.setObservaciones(linea.observaciones());
+            item.setObservaciones(normalizarObservacion(linea.observaciones()));
             itemPedidoRepository.save(item);
         }
 
@@ -176,6 +177,9 @@ public class PedidoService {
         }
         Pedido pedido = pedidoRepository.findById(pedidoId)
                 .orElseThrow(() -> new IllegalArgumentException("Pedido no encontrado"));
+        if (!"PENDIENTE".equalsIgnoreCase(pedido.getEstado())) {
+            throw new IllegalArgumentException("No se pueden agregar productos a un pedido que ya fue confirmado.");
+        }
 
         Producto producto = productoRepository.findById(productoId)
                 .orElseThrow(() -> new IllegalArgumentException("Producto no encontrado"));
@@ -206,7 +210,7 @@ public class PedidoService {
                 : String.join(",", seleccion.ids().stream().map(String::valueOf).toList()));
         item.setOpcionNombres(seleccion.nombres());
         item.setOpcionesDetalle(seleccion.detalle());
-        item.setObservaciones(observaciones);
+        item.setObservaciones(normalizarObservacion(observaciones));
 
         ItemPedido guardado = itemPedidoRepository.save(item);
         recalcularTotales(pedido);
@@ -284,6 +288,19 @@ public class PedidoService {
     public Map<String, Object> obtenerResumen(UUID pedidoId) {
         Pedido pedido = pedidoRepository.findById(pedidoId)
                 .orElseThrow(() -> new IllegalArgumentException("Pedido no encontrado"));
+        return construirResumen(pedido, itemPedidoRepository.findByPedidoId(pedidoId));
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> obtenerResumen(Usuario usuario, UUID pedidoId) {
+        exigirPersonal(usuario);
+        Pedido pedido = pedidoRepository.findById(pedidoId)
+                .orElseThrow(() -> new IllegalArgumentException("Pedido no encontrado"));
+        if (pedido.getSucursalId() == null) {
+            throw new IllegalStateException("El pedido no está asociado a una sucursal autorizada.");
+        }
+        UsuarioContextService.UsuarioContext contexto = usuarioContextService.obtenerContexto(usuario);
+        exigirAccesoSucursal(contexto, pedido.getSucursalId());
         return construirResumen(pedido, itemPedidoRepository.findByPedidoId(pedidoId));
     }
 
@@ -436,6 +453,18 @@ public class PedidoService {
                         .add(ceroSiNulo(item.getAdicionalOpciones()))
                         .multiply(BigDecimal.valueOf(item.getCantidad())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private String normalizarObservacion(String observacion) {
+        if (observacion == null || observacion.isBlank()) {
+            return null;
+        }
+        String normalizada = observacion.trim();
+        if (normalizada.length() > MAX_OBSERVACION_ITEM) {
+            throw new IllegalArgumentException(
+                    "La observación de cada producto admite hasta " + MAX_OBSERVACION_ITEM + " caracteres.");
+        }
+        return normalizada;
     }
 
     private void aplicarPropina(Pedido pedido, BigDecimal propinaValor,

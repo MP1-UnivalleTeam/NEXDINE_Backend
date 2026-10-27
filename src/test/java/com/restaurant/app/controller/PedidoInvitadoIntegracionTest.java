@@ -1,6 +1,7 @@
 package com.restaurant.app.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.restaurant.app.dto.CuponRequest;
 import com.restaurant.app.model.Cupon;
 import com.restaurant.app.model.Producto;
 import com.restaurant.app.model.ProductoOpcion;
@@ -15,12 +16,14 @@ import com.restaurant.app.repository.ProductoRepository;
 import com.restaurant.app.repository.ProductoSucursalRepository;
 import com.restaurant.app.repository.RestauranteRepository;
 import com.restaurant.app.repository.SucursalRepository;
+import com.restaurant.app.services.CuponService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
@@ -33,12 +36,15 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 class PedidoInvitadoIntegracionTest {
+
+    private String cookieSesion;
 
     @Autowired
     private TestRestTemplate rest;
@@ -58,11 +64,31 @@ class PedidoInvitadoIntegracionTest {
     private CuponRepository cupones;
     @Autowired
     private ObjectMapper mapper;
+    @Autowired
+    private CuponService cuponService;
 
     private ResponseEntity<String> postForm(String ruta, MultiValueMap<String, String> datos) {
         HttpHeaders cabeceras = new HttpHeaders();
         cabeceras.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        return rest.postForEntity(ruta, new HttpEntity<>(datos, cabeceras), String.class);
+        agregarCookieSesion(cabeceras);
+        ResponseEntity<String> respuesta =
+                rest.postForEntity(ruta, new HttpEntity<>(datos, cabeceras), String.class);
+        if (respuesta.getHeaders().getFirst(HttpHeaders.SET_COOKIE) != null) {
+            cookieSesion = respuesta.getHeaders().getFirst(HttpHeaders.SET_COOKIE).split(";", 2)[0];
+        }
+        return respuesta;
+    }
+
+    private ResponseEntity<String> getConSesion(String ruta) {
+        HttpHeaders cabeceras = new HttpHeaders();
+        agregarCookieSesion(cabeceras);
+        return rest.exchange(ruta, HttpMethod.GET, new HttpEntity<>(cabeceras), String.class);
+    }
+
+    private void agregarCookieSesion(HttpHeaders cabeceras) {
+        if (cookieSesion != null) {
+            cabeceras.add(HttpHeaders.COOKIE, cookieSesion);
+        }
     }
 
     @Test
@@ -126,6 +152,7 @@ class PedidoInvitadoIntegracionTest {
         item.add("productoId", p.getId().toString());
         item.add("cantidad", "2");
         item.add("opcionIds", o1.getId().toString());
+        item.add("observaciones", "Sin cebolla, por favor");
         ResponseEntity<String> respuestaItem = postForm(
                 "/api/pedidos/" + pedidoId + "/items", item);
         assertEquals(200, respuestaItem.getStatusCode().value());
@@ -171,20 +198,48 @@ class PedidoInvitadoIntegracionTest {
         Map<String, Object> primerItem = (Map<String, Object>) items.get(0);
         List<Object> personalizaciones = (List<Object>) primerItem.get("personalizaciones");
         assertTrue(personalizaciones.contains("Queso"));
+        assertEquals("Sin cebolla, por favor", primerItem.get("observaciones"));
         assertEquals(0, new BigDecimal("12.50").compareTo(
                 new BigDecimal(String.valueOf(primerItem.get("precioUnitario")))
                         .add(new BigDecimal(String.valueOf(primerItem.get("adicionalOpciones"))))));
 
         ResponseEntity<String> resumenFinal =
-                rest.getForEntity("/api/pedidos/" + pedidoId + "/resumen", String.class);
+                getConSesion("/api/pedidos/" + pedidoId + "/resumen");
         assertEquals(200, resumenFinal.getStatusCode().value());
         Map<String, Object> resumenRecargado =
                 mapper.readValue(resumenFinal.getBody(), Map.class);
         assertEquals(0, new BigDecimal("25.00").compareTo(
                 new BigDecimal(String.valueOf(resumenRecargado.get("total")))));
 
+        ResponseEntity<String> resumenSinSesion =
+                rest.getForEntity("/api/pedidos/" + pedidoId + "/resumen", String.class);
+        assertEquals(404, resumenSinSesion.getStatusCode().value());
+
         ResponseEntity<String> noEncontrado =
-                rest.getForEntity("/api/pedidos/" + UUID.randomUUID() + "/resumen", String.class);
+                getConSesion("/api/pedidos/" + UUID.randomUUID() + "/resumen");
         assertEquals(404, noEncontrado.getStatusCode().value());
+    }
+
+    @Test
+    void persisteCrudDeCuponSinBorrarHistorialInexistente() {
+        String codigo = "CRUD" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        Cupon creado = cuponService.crear(new CuponRequest(
+                codigo, "PORCENTAJE", new BigDecimal("15"),
+                new BigDecimal("25"), null, null, 20, true));
+
+        assertTrue(cupones.existsById(creado.getId()));
+        assertEquals(codigo, cupones.findById(creado.getId()).orElseThrow().getCodigo());
+
+        Cupon actualizado = cuponService.actualizar(creado.getId(), new CuponRequest(
+                codigo, "MONTO_FIJO", new BigDecimal("10"),
+                BigDecimal.ZERO, null, null, null, true));
+        assertEquals("MONTO_FIJO", actualizado.getTipo());
+        assertEquals(new BigDecimal("10"), actualizado.getValor());
+
+        cuponService.cambiarEstado(creado.getId(), false);
+        assertFalse(cupones.findById(creado.getId()).orElseThrow().isActivo());
+
+        cuponService.eliminar(creado.getId());
+        assertFalse(cupones.existsById(creado.getId()));
     }
 }

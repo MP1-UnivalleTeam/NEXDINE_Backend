@@ -13,10 +13,12 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -45,7 +47,7 @@ class PedidoServiceTest {
         itemGuardado.setCantidad(2);
         when(pedidos.findById(pedido.getId())).thenReturn(Optional.of(pedido));
         when(productos.findById(producto.getId())).thenReturn(Optional.of(producto));
-        when(items.save(any(ItemPedido.class))).thenReturn(itemGuardado);
+        when(items.save(any(ItemPedido.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(items.findByPedidoId(pedido.getId())).thenReturn(List.of(itemGuardado));
         when(pedidos.save(any(Pedido.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -67,11 +69,15 @@ class PedidoServiceTest {
                 mock(CuponService.class),
                 new BigDecimal("16"));
 
-        service.agregarItem(pedido.getId(), producto.getId(), 2, null, null);
+        ItemPedido guardado = service.agregarItem(
+                pedido.getId(), producto.getId(), 2, null, "  Sin cebolla, por favor  ");
 
         assertEquals(0, new BigDecimal("200.00").compareTo(pedido.getSubtotal()));
         assertEquals(0, new BigDecimal("32.00").compareTo(pedido.getImpuestos()));
         assertEquals(0, new BigDecimal("237.00").compareTo(pedido.getTotal()));
+        assertEquals("Sin cebolla, por favor", guardado.getObservaciones());
+        assertThrows(IllegalArgumentException.class, () -> service.agregarItem(
+                pedido.getId(), producto.getId(), 1, null, "x".repeat(501)));
     }
 
     @Test
@@ -93,6 +99,7 @@ class PedidoServiceTest {
         item.setPrecioUnitario(new BigDecimal("100.00"));
         item.setAdicionalOpciones(BigDecimal.ZERO);
         item.setCantidad(2);
+        item.setObservaciones("Salsa aparte");
         when(pedidos.findById(pedidoId)).thenReturn(Optional.of(pedido));
         when(items.findByPedidoId(pedidoId)).thenReturn(List.of(item));
 
@@ -118,5 +125,6 @@ class PedidoServiceTest {
         assertEquals(0, new BigDecimal("232.10").compareTo((BigDecimal) resumen.get("total")));
         assertEquals(new BigDecimal("200.00"), resumen.get("subtotal"));
         assertEquals(new BigDecimal("5.00"), resumen.get("propina"));
+        assertEquals("Salsa aparte", ((Map<?, ?>) ((List<?>) resumen.get("items")).getFirst()).get("observaciones"));
     }
 }
