@@ -9,6 +9,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface PedidoRepository extends JpaRepository<Pedido, UUID> {
+
+    boolean existsByCuponCodigoIgnoreCase(String cuponCodigo);
     Optional<Pedido> findByNumeroSeguimiento(String numeroSeguimiento);
 
     List<Pedido> findBySucursalIdInAndEstadoNotInOrderByFechaCreacionDesc(
