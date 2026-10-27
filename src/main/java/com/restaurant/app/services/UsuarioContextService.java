@@ -49,7 +49,26 @@ public class UsuarioContextService {
             return obtenerContextoSuperadmin(usuario);
         }
 
+        if ("MESERO".equals(usuario.getRol()) || "COCINERO".equals(usuario.getRol())) {
+            return obtenerContextoEmpleado(usuario);
+        }
+
         return obtenerContextoAdministrador(usuario);
+    }
+
+    private UsuarioContext obtenerContextoEmpleado(Usuario usuario) {
+        UUID sucursalId = empleadoSucursalRepository.findByEmpleadoId(usuario.getId())
+                .stream()
+                .findFirst()
+                .map(asociacion -> asociacion.getSucursalId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "El empleado no tiene una sucursal asignada."));
+
+        Sucursal sucursal = sucursalRepository.findById(sucursalId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "La sucursal asignada al empleado no existe."));
+
+        return new UsuarioContext(sucursal.getRestauranteId(), sucursalId, usuario.getRol());
     }
 
     private UsuarioContext obtenerContextoSuperadmin(Usuario usuario) {

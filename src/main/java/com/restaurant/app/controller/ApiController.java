@@ -3,17 +3,22 @@ package com.restaurant.app.controller;
 import com.restaurant.app.model.Mesa;
 import com.restaurant.app.model.Restaurante;
 import com.restaurant.app.model.SesionMesa;
+import com.restaurant.app.model.Sucursal;
 import com.restaurant.app.model.Usuario;
 import com.restaurant.app.repository.RestauranteRepository;
+import com.restaurant.app.repository.SucursalRepository;
 import com.restaurant.app.services.MenuService;
 import com.restaurant.app.services.MesaService;
 import com.restaurant.app.services.SesionMesaService;
 import com.restaurant.app.services.UserService;
 import jakarta.servlet.http.HttpSession;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,17 +34,23 @@ public class ApiController {
     private final MenuService menuService;
     private final MesaService mesaService;
     private final RestauranteRepository restauranteRepository;
+    private final SucursalRepository sucursalRepository;
+    private final BigDecimal tasaImpuesto;
 
     public ApiController(UserService userService,
                          SesionMesaService sesionMesaService,
                          MenuService menuService,
                          MesaService mesaService,
-                         RestauranteRepository restauranteRepository) {
+                         RestauranteRepository restauranteRepository,
+                         SucursalRepository sucursalRepository,
+                         @Value("${app.pedidos.tasa-impuesto:0}") BigDecimal tasaImpuesto) {
         this.userService = userService;
         this.sesionMesaService = sesionMesaService;
         this.menuService = menuService;
         this.mesaService = mesaService;
         this.restauranteRepository = restauranteRepository;
+        this.sucursalRepository = sucursalRepository;
+        this.tasaImpuesto = tasaImpuesto;
     }
 
     @GetMapping("/auth/check")
@@ -103,6 +114,10 @@ public class ApiController {
             response.put("mesa", mesaValida.getNombre());
             response.put("codigoMesa", mesaValida.getCodigo());
             response.put("token", sesion.getToken());
+            response.put("sucursalId", mesaValida.getSucursalId());
+            response.put("tasaImpuesto", tasaImpuesto);
+            sucursalRepository.findById(mesaValida.getSucursalId())
+                    .ifPresent(sucursal -> response.put("sucursalNombre", sucursal.getNombre()));
             response.put("menu", menuService
                     .getMenuPorSucursal(mesaValida.getSucursalId())
                     .get("categorias"));
@@ -132,6 +147,21 @@ public class ApiController {
             Map<String, Object> response = new HashMap<>();
             response.put("restaurante", restaurante.getNombre());
             response.put("slug", restaurante.getSlug());
+            response.put("tasaImpuesto", tasaImpuesto);
+
+            List<Sucursal> sucursales = sucursalRepository
+                    .findByRestauranteIdAndActivaTrue(restaurante.getId());
+            List<Map<String, Object>> sucursalesResponse = new ArrayList<>();
+            for (Sucursal sucursal : sucursales) {
+                Map<String, Object> item = new HashMap<>();
+                item.put("id", sucursal.getId());
+                item.put("nombre", sucursal.getNombre());
+                item.put("direccion", sucursal.getDireccion());
+                item.put("telefono", sucursal.getTelefono());
+                sucursalesResponse.add(item);
+            }
+            response.put("sucursales", sucursalesResponse);
+            response.put("sucursalId", sucursales.size() == 1 ? sucursales.get(0).getId() : null);
             response.put("menu", menuService.getMenuPublicoPorRestaurante(restaurante.getId()).get("categorias"));
 
             return ResponseEntity.ok(response);
@@ -171,6 +201,10 @@ public class ApiController {
         try {
             Map<String, Object> response = new HashMap<>();
             response.put("mesa", mesaOpt.get().getNombre());
+            response.put("sucursalId", mesaOpt.get().getSucursalId());
+            response.put("tasaImpuesto", tasaImpuesto);
+            sucursalRepository.findById(mesaOpt.get().getSucursalId())
+                    .ifPresent(sucursal -> response.put("sucursalNombre", sucursal.getNombre()));
             response.put("menu", menuService
                     .getMenuPorSucursal(mesaOpt.get().getSucursalId())
                     .get("categorias"));

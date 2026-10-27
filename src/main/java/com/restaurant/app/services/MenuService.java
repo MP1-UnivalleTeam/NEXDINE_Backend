@@ -2,8 +2,10 @@ package com.restaurant.app.services;
 
 import com.restaurant.app.model.Categoria;
 import com.restaurant.app.model.Producto;
+import com.restaurant.app.model.ProductoOpcionGrupo;
 import com.restaurant.app.model.ProductoSucursal;
 import com.restaurant.app.repository.CategoriaRepository;
+import com.restaurant.app.repository.ProductoOpcionGrupoRepository;
 import com.restaurant.app.repository.ProductoRepository;
 import com.restaurant.app.repository.ProductoSucursalRepository;
 
@@ -18,13 +20,16 @@ public class MenuService {
     private final ProductoRepository productoRepository;
     private final CategoriaRepository categoriaRepository;
     private final ProductoSucursalRepository productoSucursalRepository;
+    private final ProductoOpcionGrupoRepository productoOpcionGrupoRepository;
 
     public MenuService(ProductoRepository productoRepository,
                        CategoriaRepository categoriaRepository,
-                       ProductoSucursalRepository productoSucursalRepository) {
+                       ProductoSucursalRepository productoSucursalRepository,
+                       ProductoOpcionGrupoRepository productoOpcionGrupoRepository) {
         this.productoRepository = productoRepository;
         this.categoriaRepository = categoriaRepository;
         this.productoSucursalRepository = productoSucursalRepository;
+        this.productoOpcionGrupoRepository = productoOpcionGrupoRepository;
     }
 
     private static final String SIN_CATEGORIA = "Sin categoría";
@@ -65,6 +70,24 @@ public class MenuService {
         return resultado;
     }
 
+    private Map<UUID, Boolean> cargarTieneOpciones(List<Producto> productos) {
+        List<UUID> ids = productos.stream()
+                .map(producto -> producto.getId())
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+
+        if (ids.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+
+        Map<UUID, Boolean> resultado = new HashMap<>();
+        for (ProductoOpcionGrupo grupo : productoOpcionGrupoRepository.findByProductoIdIn(ids)) {
+            resultado.put(grupo.getProductoId(), Boolean.TRUE);
+        }
+        return resultado;
+    }
+
     public Map<String, Object> getMenuPorSucursal(UUID sucursalId) {
         List<Producto> todos = productoRepository.findAll();
 
@@ -97,6 +120,7 @@ public class MenuService {
 
         Map<UUID, String> nombresCategoria = cargarNombresCategoria(productos);
         Map<UUID, Boolean> disponibilidadOperacional = cargarDisponibilidadOperacional(productos);
+        Map<UUID, Boolean> tieneOpciones = cargarTieneOpciones(productos);
 
         List<Map<String, Object>> items = new ArrayList<>();
 
@@ -114,6 +138,7 @@ public class MenuService {
 
             boolean operacional = disponibilidadOperacional.getOrDefault(p.getId(), Boolean.TRUE);
             item.put("disponible", p.isDisponible() && operacional);
+            item.put("tieneOpciones", tieneOpciones.getOrDefault(p.getId(), Boolean.FALSE));
 
             items.add(item);
         }

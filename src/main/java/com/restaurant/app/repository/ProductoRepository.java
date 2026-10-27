@@ -21,6 +21,10 @@ public interface ProductoRepository extends JpaRepository<Producto, UUID> {
 
     List<Producto> findByRestauranteId(UUID restauranteId);
 
+    List<Producto> findByRestauranteIdAndDisponibleTrue(UUID restauranteId);
+
+    List<Producto> findByRestauranteIdAndCategoriaIdAndDisponibleTrue(UUID restauranteId, UUID categoriaId);
+
     long countByImagenPublicId(String imagenPublicId);
 
     long countByImagenPublicIdAndIdNot(String imagenPublicId, UUID productoId);

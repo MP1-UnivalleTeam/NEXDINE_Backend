@@ -31,6 +31,7 @@ class MenuServiceCargaLotesTest {
     private ProductoRepository productoRepository;
     private CategoriaRepository categoriaRepository;
     private ProductoSucursalRepository productoSucursalRepository;
+    private com.restaurant.app.repository.ProductoOpcionGrupoRepository productoOpcionGrupoRepository;
     private MenuService menuService;
 
     @BeforeEach
@@ -38,8 +39,11 @@ class MenuServiceCargaLotesTest {
         productoRepository = mock(ProductoRepository.class);
         categoriaRepository = mock(CategoriaRepository.class);
         productoSucursalRepository = mock(ProductoSucursalRepository.class);
+        productoOpcionGrupoRepository =
+                mock(com.restaurant.app.repository.ProductoOpcionGrupoRepository.class);
 
-        menuService = new MenuService(productoRepository, categoriaRepository, productoSucursalRepository);
+        menuService = new MenuService(productoRepository, categoriaRepository,
+                productoSucursalRepository, productoOpcionGrupoRepository);
     }
 
     private Producto producto(long n, UUID categoriaId, boolean disponible) {
@@ -117,6 +121,7 @@ class MenuServiceCargaLotesTest {
         assertEquals(p.getImagen(), item.get("imagen"));
         assertEquals("Entrantes", item.get("categoria"));
         assertEquals(Boolean.TRUE, item.get("disponible"));
+        assertEquals(Boolean.FALSE, item.get("tieneOpciones"));
     }
 
     @Test

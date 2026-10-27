@@ -45,7 +45,7 @@ public class MesaService {
         UUID sucursalObjetivo = contexto.getSucursalId();
 
         if (sucursalIdSolicitada != null) {
-            if (!contexto.esSuperadmin()) {
+            if (!contexto.esSuperadmin() && !sucursalIdSolicitada.equals(contexto.getSucursalId())) {
                 throw new IllegalStateException("No tiene permisos para consultar otra sucursal.");
             }
             UUID sucursalValidada = sucursalIdSolicitada;
