@@ -13,13 +13,18 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/pedidos")
 public class PedidoController {
+
+    private static final String PEDIDOS_INVITADO_SESSION = "pedidosInvitado";
+    private static final int MAX_PEDIDOS_INVITADO_SESSION = 50;
 
     private final PedidoService pedidoService;
     private final PedidoEventosService eventosService;
@@ -133,7 +138,8 @@ public class PedidoController {
             @RequestParam String tipoServicio,
             @RequestParam(required = false) String direccion,
             @RequestParam(required = false) String referencia,
-            @RequestParam(required = false) UUID sucursalId) {
+            @RequestParam(required = false) UUID sucursalId,
+            HttpSession session) {
 
         if (nombre == null || nombre.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "El nombre es obligatorio"));
@@ -151,6 +157,7 @@ public class PedidoController {
         try {
             Pedido pedido = pedidoService.crearPedidoInvitado(nombre.trim(), telefono.trim(),
                     tipoServicio, direccion, referencia, sucursalId);
+            registrarPedidoInvitado(session, pedido.getId());
             return ResponseEntity.ok(Map.of(
                     "id", pedido.getId(),
                     "numeroSeguimiento", pedido.getNumeroSeguimiento(),
@@ -169,8 +176,12 @@ public class PedidoController {
             @RequestParam UUID productoId,
             @RequestParam int cantidad,
             @RequestParam(required = false) List<UUID> opcionIds,
-            @RequestParam(required = false) String observaciones) {
+            @RequestParam(required = false) String observaciones,
+            HttpSession session) {
 
+        if (!esPedidoDeSesion(pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
         if (cantidad < 1) {
             return ResponseEntity.badRequest().body(Map.of("error", "La cantidad debe ser al menos 1"));
         }
@@ -190,12 +201,21 @@ public class PedidoController {
     }
 
     @GetMapping("/{pedidoId}/resumen")
-    public ResponseEntity<?> obtenerResumen(@PathVariable UUID pedidoId) {
+    public ResponseEntity<?> obtenerResumen(@PathVariable UUID pedidoId, HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        boolean esInvitadoPropietario = esPedidoDeSesion(pedidoId, session);
+        if (!esInvitadoPropietario && (usuario == null || !esPersonal(usuario))) {
+            return ResponseEntity.notFound().build();
+        }
         try {
-            Map<String, Object> resumen = pedidoService.obtenerResumen(pedidoId);
+            Map<String, Object> resumen = esInvitadoPropietario
+                    ? pedidoService.obtenerResumen(pedidoId)
+                    : pedidoService.obtenerResumen(usuario, pedidoId);
             return ResponseEntity.ok(resumen);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", "No fue posible obtener el resumen"));
         }
@@ -207,8 +227,12 @@ public class PedidoController {
             @RequestParam(required = false) String propinaTipo,
             @RequestParam(required = false) BigDecimal propinaValor,
             @RequestParam(required = false) BigDecimal propinaPorcentaje,
-            @RequestParam(required = false) String cuponCodigo) {
+            @RequestParam(required = false) String cuponCodigo,
+            HttpSession session) {
 
+        if (!esPedidoDeSesion(pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
         try {
             Pedido pedido = pedidoService.confirmarPedido(pedidoId, propinaTipo, propinaValor,
                     propinaPorcentaje, cuponCodigo);
@@ -234,5 +258,26 @@ public class PedidoController {
     private boolean esMeseroOAdmin(Usuario usuario) {
         return usuario.getRol() != null
                 && List.of("MESERO", "ADMINISTRADOR", "SUPERADMIN").contains(usuario.getRol());
+    }
+
+    private void registrarPedidoInvitado(HttpSession session, UUID pedidoId) {
+        Object pedidos = session.getAttribute(PEDIDOS_INVITADO_SESSION);
+        Set<UUID> ids = new LinkedHashSet<>();
+        if (pedidos instanceof Set<?> existentes) {
+            existentes.stream()
+                    .filter(UUID.class::isInstance)
+                    .map(UUID.class::cast)
+                    .forEach(ids::add);
+        }
+        ids.add(pedidoId);
+        while (ids.size() > MAX_PEDIDOS_INVITADO_SESSION) {
+            ids.remove(ids.iterator().next());
+        }
+        session.setAttribute(PEDIDOS_INVITADO_SESSION, ids);
+    }
+
+    private boolean esPedidoDeSesion(UUID pedidoId, HttpSession session) {
+        Object pedidos = session.getAttribute(PEDIDOS_INVITADO_SESSION);
+        return pedidos instanceof Set<?> ids && ids.contains(pedidoId);
     }
 }

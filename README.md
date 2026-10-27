@@ -227,6 +227,26 @@ incluye `subtotal`, `descuento`, `impuestos`, `tasaImpuesto`, `propina`,
 | GET | `/api/pedidos/mesas/{mesaId}/pedidos` | Personal autenticado | Lista pedidos activos de una mesa |
 | PUT | `/api/pedidos/{pedidoId}/estado?estado=EN_PREPARACION` | Personal autenticado | Actualiza el estado del pedido |
 | GET | `/api/pedidos/activos/eventos` | Personal autenticado | Flujo SSE `pedido-actualizado` con cambios en tiempo real |
+| POST | `/api/pedidos/{pedidoId}/items` | Sesión propietaria del pedido invitado | Agrega producto y observación individual (hasta 500 caracteres) |
+| POST | `/api/pedidos/{pedidoId}/confirmar` | Sesión propietaria del pedido invitado | Confirma el pedido; recalcula precios, impuestos y cupón en backend |
+| GET | `/api/pedidos/{pedidoId}/resumen` | Propietario invitado en su sesión o personal autorizado de la sucursal | Devuelve las líneas, incluidas sus observaciones |
+| POST | `/api/cupones/validar` | Público | Valida un código para previsualización; no sustituye la validación al confirmar |
+| GET | `/api/cupones/admin` | Administrador o superadministrador | Lista cupones y datos de vigencia/uso |
+| POST | `/api/cupones/admin` | Administrador o superadministrador | Crea cupón |
+| PUT | `/api/cupones/admin/{id}` | Administrador o superadministrador | Edita propiedades del cupón |
+| PATCH | `/api/cupones/admin/{id}/estado?activo={boolean}` | Administrador o superadministrador | Activa o desactiva un cupón |
+| DELETE | `/api/cupones/admin/{id}` | Administrador o superadministrador | Elimina únicamente si no tiene usos ni pedidos relacionados |
+
+Las observaciones de línea se almacenan en `items_pedido.observaciones` como
+texto plano; se normalizan y validan en el servidor. El identificador de pedido
+no es suficiente para modificar una orden invitada ni leer su resumen: el
+navegador debe conservar la cookie de sesión establecida al crearla. El personal
+solo puede consultar resúmenes de pedidos dentro de su contexto de sucursal.
+
+Los cupones con historial no se borran físicamente: la API responde `409` y se
+deben desactivar para conservar su referencia en pedidos anteriores. La tabla
+`cupones` y sus campos de vigencia/uso ya están definidos en la migración V3;
+no se requiere una migración nueva para estas operaciones.
 
 El cuerpo de `POST /api/pedidos/manual` usa el formato:
 
