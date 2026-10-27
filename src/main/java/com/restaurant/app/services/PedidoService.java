@@ -44,6 +44,8 @@ public class PedidoService {
     private final SucursalRepository sucursalRepository;
     private final UsuarioContextService usuarioContextService;
     private final PedidoEventosService eventosService;
+    private final ProductoOpcionService productoOpcionService;
+    private final CuponService cuponService;
     private final BigDecimal tasaImpuesto;
 
     public PedidoService(PedidoRepository pedidoRepository,
@@ -54,6 +56,8 @@ public class PedidoService {
                          SucursalRepository sucursalRepository,
                          UsuarioContextService usuarioContextService,
                          PedidoEventosService eventosService,
+                         ProductoOpcionService productoOpcionService,
+                         CuponService cuponService,
                          @Value("${app.pedidos.tasa-impuesto:0}") BigDecimal tasaImpuesto) {
         if (tasaImpuesto.compareTo(BigDecimal.ZERO) < 0
                 || tasaImpuesto.compareTo(BigDecimal.valueOf(100)) > 0) {
@@ -67,6 +71,8 @@ public class PedidoService {
         this.sucursalRepository = sucursalRepository;
         this.usuarioContextService = usuarioContextService;
         this.eventosService = eventosService;
+        this.productoOpcionService = productoOpcionService;
+        this.cuponService = cuponService;
         this.tasaImpuesto = tasaImpuesto;
     }
 
@@ -173,16 +179,21 @@ public class PedidoService {
 
         Producto producto = productoRepository.findById(productoId)
                 .orElseThrow(() -> new IllegalArgumentException("Producto no encontrado"));
+        if (!producto.isDisponible()) {
+            throw new IllegalArgumentException("El producto no está disponible.");
+        }
         if (pedido.getSucursalId() != null) {
             Sucursal sucursal = sucursalRepository.findById(pedido.getSucursalId())
                     .orElseThrow(() -> new IllegalStateException("La sucursal del pedido no existe."));
-            if (!producto.isDisponible()
-                    || !producto.getRestauranteId().equals(sucursal.getRestauranteId())
+            if (!producto.getRestauranteId().equals(sucursal.getRestauranteId())
                     || !productoSucursalRepository.existsByProductoIdAndSucursalIdAndDisponibleTrue(
                     productoId, pedido.getSucursalId())) {
                 throw new IllegalArgumentException("El producto no está disponible en la sucursal del pedido.");
             }
         }
+
+        ProductoOpcionService.SeleccionOpciones seleccion =
+                productoOpcionService.validarSeleccion(productoId, opcionIds);
 
         ItemPedido item = new ItemPedido();
         item.setPedidoId(pedidoId);
@@ -190,10 +201,11 @@ public class PedidoService {
         item.setProductoNombre(producto.getNombre());
         item.setCantidad(cantidad);
         item.setPrecioUnitario(producto.getPrecio());
-        item.setAdicionalOpciones(BigDecimal.ZERO);
-        item.setOpcionIds(opcionIds != null
-                ? String.join(",", opcionIds.stream().map(String::valueOf).toList()) : null);
-        item.setOpcionNombres("");
+        item.setAdicionalOpciones(seleccion.adicional());
+        item.setOpcionIds(seleccion.ids().isEmpty() ? null
+                : String.join(",", seleccion.ids().stream().map(String::valueOf).toList()));
+        item.setOpcionNombres(seleccion.nombres());
+        item.setOpcionesDetalle(seleccion.detalle());
         item.setObservaciones(observaciones);
 
         ItemPedido guardado = itemPedidoRepository.save(item);
@@ -206,26 +218,64 @@ public class PedidoService {
     @Transactional
     public Pedido confirmarPedido(UUID pedidoId, String propinaTipo, BigDecimal propinaValor,
                                   String cuponCodigo) {
+        return confirmarPedido(pedidoId, propinaTipo, propinaValor, null, cuponCodigo);
+    }
+
+    @Transactional
+    public Pedido confirmarPedido(UUID pedidoId, String propinaTipo, BigDecimal propinaValor,
+                                  BigDecimal propinaPorcentaje, String cuponCodigo) {
         Pedido pedido = pedidoRepository.findById(pedidoId)
                 .orElseThrow(() -> new IllegalArgumentException("Pedido no encontrado"));
 
-        if (propinaValor != null) {
-            if (propinaValor.compareTo(BigDecimal.ZERO) < 0) {
-                throw new IllegalArgumentException("La propina no puede ser negativa.");
-            }
-            pedido.setPropinaTipo(propinaTipo);
-            pedido.setPropinaValor(propinaValor);
-            pedido.setPropina(propinaValor);
+        if ("CONFIRMADO".equals(pedido.getEstado())) {
+            throw new IllegalArgumentException("El pedido ya fue confirmado.");
+        }
+        if (pedido.getSucursalId() == null) {
+            throw new IllegalArgumentException("Debe seleccionar una sucursal antes de confirmar el pedido.");
         }
 
+        Sucursal sucursal = sucursalRepository.findById(pedido.getSucursalId())
+                .filter(Sucursal::isActiva)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "La sucursal del pedido no existe o está inactiva."));
+
+        List<ItemPedido> items = itemPedidoRepository.findByPedidoId(pedidoId);
+        if (items.isEmpty()) {
+            throw new IllegalArgumentException("El pedido debe tener al menos un producto.");
+        }
+        for (ItemPedido item : items) {
+            Producto producto = productoRepository.findById(item.getProductoId())
+                    .orElseThrow(() -> new IllegalArgumentException("Uno de los productos ya no existe."));
+            if (!producto.isDisponible()
+                    || !producto.getRestauranteId().equals(sucursal.getRestauranteId())
+                    || !productoSucursalRepository.existsByProductoIdAndSucursalIdAndDisponibleTrue(
+                    producto.getId(), sucursal.getId())) {
+                throw new IllegalArgumentException("El producto " + producto.getNombre()
+                        + " ya no está disponible en la sucursal seleccionada.");
+            }
+        }
+
+        BigDecimal subtotal = calcularSubtotal(items);
+        aplicarPropina(pedido, propinaValor, propinaPorcentaje, subtotal);
+
+        CuponService.CuponAplicado cuponAplicado = null;
         if (cuponCodigo != null && !cuponCodigo.isBlank()) {
-            pedido.setCuponCodigo(cuponCodigo);
-            pedido.setDescuento(calcularDescuento(cuponCodigo, pedido.getSubtotal()));
+            cuponAplicado = cuponService.aplicar(cuponCodigo, subtotal);
+            pedido.setCuponCodigo(cuponAplicado.codigo());
+            pedido.setDescuento(cuponAplicado.descuento());
+        } else {
+            pedido.setCuponCodigo(null);
+            pedido.setDescuento(BigDecimal.ZERO);
         }
 
         recalcularTotales(pedido);
         pedido.setEstado("CONFIRMADO");
         Pedido guardado = pedidoRepository.save(pedido);
+
+        if (cuponAplicado != null) {
+            cuponService.registrarUso(cuponAplicado.codigo());
+        }
+
         publicarPedido(guardado);
         return guardado;
     }
@@ -293,30 +343,47 @@ public class PedidoService {
         List<Map<String, Object>> itemsResponse = new ArrayList<>();
         BigDecimal subtotal = BigDecimal.ZERO;
         for (ItemPedido item : items) {
-            BigDecimal importe = ceroSiNulo(item.getPrecioUnitario())
-                    .add(ceroSiNulo(item.getAdicionalOpciones()))
+            BigDecimal precio = ceroSiNulo(item.getPrecioUnitario());
+            BigDecimal adicional = ceroSiNulo(item.getAdicionalOpciones());
+            BigDecimal importe = precio.add(adicional)
                     .multiply(BigDecimal.valueOf(item.getCantidad()));
             subtotal = subtotal.add(importe);
-            itemsResponse.add(Map.of(
-                    "id", item.getId(),
-                    "nombre", item.getProductoNombre(),
-                    "cantidad", item.getCantidad(),
-                    "precioUnitario", item.getPrecioUnitario(),
-                    "importe", importe,
-                    "personalizaciones", item.getOpcionNombres() == null ? "" : item.getOpcionNombres(),
-                    "observaciones", item.getObservaciones() == null ? "" : item.getObservaciones()
-            ));
+
+            List<Map<String, Object>> detalle = productoOpcionService
+                    .leerDetalle(item.getOpcionesDetalle());
+            List<String> personalizaciones = detalle.stream()
+                    .map(opcion -> String.valueOf(opcion.get("nombre")))
+                    .filter(nombre -> !nombre.isBlank())
+                    .toList();
+            if (personalizaciones.isEmpty() && item.getOpcionNombres() != null
+                    && !item.getOpcionNombres().isBlank()) {
+                personalizaciones = List.of(item.getOpcionNombres().split(",\\s*"));
+            }
+
+            Map<String, Object> itemResponse = new LinkedHashMap<>();
+            itemResponse.put("id", item.getId());
+            itemResponse.put("productoId", item.getProductoId());
+            itemResponse.put("nombre", item.getProductoNombre());
+            itemResponse.put("cantidad", item.getCantidad());
+            itemResponse.put("precioUnitario", precio);
+            itemResponse.put("adicionalOpciones", adicional);
+            itemResponse.put("importe", importe);
+            itemResponse.put("personalizaciones", personalizaciones);
+            itemResponse.put("opciones", detalle);
+            itemResponse.put("observaciones", item.getObservaciones() == null
+                    ? "" : item.getObservaciones());
+            itemsResponse.add(itemResponse);
         }
 
-        BigDecimal descuento = ceroSiNulo(pedido.getDescuento());
+        BigDecimal descuento = ceroSiNulo(pedido.getDescuento())
+                .max(BigDecimal.ZERO).min(subtotal);
+        BigDecimal base = subtotal.subtract(descuento).max(BigDecimal.ZERO);
         BigDecimal tasaAplicada = pedido.getTasaImpuesto() == null
                 ? tasaImpuesto : pedido.getTasaImpuesto();
-        BigDecimal impuestos = calcularImpuestos(
-                subtotal.subtract(descuento).max(BigDecimal.ZERO), tasaAplicada);
-        BigDecimal propina = ceroSiNulo(pedido.getPropina());
+        BigDecimal impuestos = calcularImpuestos(base, tasaAplicada);
+        BigDecimal propina = calcularPropina(pedido, subtotal);
         BigDecimal cargos = ceroSiNulo(pedido.getCargos());
-        BigDecimal total = subtotal.subtract(descuento).max(BigDecimal.ZERO)
-                .add(impuestos).add(propina).add(cargos);
+        BigDecimal total = base.add(impuestos).add(propina).add(cargos);
 
         Map<String, Object> resumen = new LinkedHashMap<>();
         resumen.put("id", pedido.getId());
@@ -336,6 +403,9 @@ public class PedidoService {
         resumen.put("tasaImpuesto", tasaAplicada);
         resumen.put("cargos", cargos);
         resumen.put("propina", propina);
+        resumen.put("propinaTipo", pedido.getPropinaTipo());
+        resumen.put("propinaPorcentaje", "PORCENTAJE".equalsIgnoreCase(pedido.getPropinaTipo())
+                ? pedido.getPropinaValor() : null);
         resumen.put("total", total);
         resumen.put("cuponCodigo", pedido.getCuponCodigo() != null ? pedido.getCuponCodigo() : "");
         resumen.put("pagoMetodo", pedido.getPagoMetodo() != null ? pedido.getPagoMetodo() : "");
@@ -344,21 +414,71 @@ public class PedidoService {
     }
 
     private void recalcularTotales(Pedido pedido) {
-        BigDecimal subtotal = itemPedidoRepository.findByPedidoId(pedido.getId()).stream()
+        BigDecimal subtotal = calcularSubtotal(itemPedidoRepository.findByPedidoId(pedido.getId()));
+        BigDecimal descuento = ceroSiNulo(pedido.getDescuento())
+                .max(BigDecimal.ZERO).min(subtotal);
+        BigDecimal base = subtotal.subtract(descuento).max(BigDecimal.ZERO);
+        BigDecimal impuestos = calcularImpuestos(base, tasaImpuesto);
+        BigDecimal propina = calcularPropina(pedido, subtotal);
+        pedido.setSubtotal(subtotal);
+        pedido.setDescuento(descuento);
+        pedido.setImpuestos(impuestos);
+        pedido.setTasaImpuesto(tasaImpuesto);
+        pedido.setPropina(propina);
+        pedido.setTotal(base.add(impuestos)
+                .add(propina)
+                .add(ceroSiNulo(pedido.getCargos())));
+    }
+
+    private BigDecimal calcularSubtotal(List<ItemPedido> items) {
+        return items.stream()
                 .map(item -> ceroSiNulo(item.getPrecioUnitario())
                         .add(ceroSiNulo(item.getAdicionalOpciones()))
                         .multiply(BigDecimal.valueOf(item.getCantidad())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal descuento = ceroSiNulo(pedido.getDescuento());
-        BigDecimal impuestos = calcularImpuestos(
-                subtotal.subtract(descuento).max(BigDecimal.ZERO), tasaImpuesto);
-        pedido.setSubtotal(subtotal);
-        pedido.setImpuestos(impuestos);
-        pedido.setTasaImpuesto(tasaImpuesto);
-        pedido.setTotal(subtotal.subtract(descuento).max(BigDecimal.ZERO)
-                .add(impuestos)
-                .add(ceroSiNulo(pedido.getPropina()))
-                .add(ceroSiNulo(pedido.getCargos())));
+    }
+
+    private void aplicarPropina(Pedido pedido, BigDecimal propinaValor,
+                                BigDecimal propinaPorcentaje, BigDecimal subtotal) {
+        if (propinaPorcentaje != null) {
+            if (propinaPorcentaje.signum() < 0
+                    || propinaPorcentaje.compareTo(BigDecimal.valueOf(100)) > 0) {
+                throw new IllegalArgumentException("El porcentaje de propina debe estar entre 0 y 100.");
+            }
+            BigDecimal porcentaje = propinaPorcentaje.setScale(2, RoundingMode.HALF_UP);
+            pedido.setPropinaTipo(porcentaje.signum() == 0 ? "NINGUNA" : "PORCENTAJE");
+            pedido.setPropinaValor(porcentaje);
+            pedido.setPropina(calcularPorcentaje(subtotal, porcentaje));
+            return;
+        }
+
+        if (propinaValor != null) {
+            if (propinaValor.signum() < 0) {
+                throw new IllegalArgumentException("La propina no puede ser negativa.");
+            }
+            BigDecimal monto = propinaValor.setScale(2, RoundingMode.HALF_UP);
+            pedido.setPropinaTipo(monto.signum() == 0 ? "NINGUNA" : "PERSONALIZADA");
+            pedido.setPropinaValor(monto);
+            pedido.setPropina(monto);
+            return;
+        }
+
+        pedido.setPropinaTipo("NINGUNA");
+        pedido.setPropinaValor(BigDecimal.ZERO);
+        pedido.setPropina(BigDecimal.ZERO);
+    }
+
+    private BigDecimal calcularPropina(Pedido pedido, BigDecimal subtotal) {
+        if ("PORCENTAJE".equalsIgnoreCase(pedido.getPropinaTipo())
+                && pedido.getPropinaValor() != null) {
+            return calcularPorcentaje(subtotal, pedido.getPropinaValor());
+        }
+        return ceroSiNulo(pedido.getPropina());
+    }
+
+    private BigDecimal calcularPorcentaje(BigDecimal base, BigDecimal porcentaje) {
+        return base.multiply(porcentaje)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal calcularImpuestos(BigDecimal base, BigDecimal tasa) {
@@ -368,10 +488,6 @@ public class PedidoService {
 
     private BigDecimal ceroSiNulo(BigDecimal valor) {
         return valor == null ? BigDecimal.ZERO : valor;
-    }
-
-    private BigDecimal calcularDescuento(String cuponCodigo, BigDecimal subtotal) {
-        return BigDecimal.ZERO;
     }
 
     private List<UUID> sucursalesPermitidas(UsuarioContextService.UsuarioContext contexto) {

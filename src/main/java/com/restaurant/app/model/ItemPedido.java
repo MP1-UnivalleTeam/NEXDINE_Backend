@@ -36,6 +36,9 @@ public class ItemPedido extends EntidadUuid {
     @Column(name = "opcion_nombres", columnDefinition = "TEXT")
     private String opcionNombres;
 
+    @Column(name = "opciones_detalle", columnDefinition = "TEXT")
+    private String opcionesDetalle;
+
     @Column(columnDefinition = "TEXT")
     private String observaciones;
 }

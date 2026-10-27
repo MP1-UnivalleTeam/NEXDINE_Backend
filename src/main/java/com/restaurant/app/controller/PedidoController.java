@@ -206,10 +206,12 @@ public class PedidoController {
             @PathVariable UUID pedidoId,
             @RequestParam(required = false) String propinaTipo,
             @RequestParam(required = false) BigDecimal propinaValor,
+            @RequestParam(required = false) BigDecimal propinaPorcentaje,
             @RequestParam(required = false) String cuponCodigo) {
 
         try {
-            Pedido pedido = pedidoService.confirmarPedido(pedidoId, propinaTipo, propinaValor, cuponCodigo);
+            Pedido pedido = pedidoService.confirmarPedido(pedidoId, propinaTipo, propinaValor,
+                    propinaPorcentaje, cuponCodigo);
             return ResponseEntity.ok(pedidoService.obtenerResumen(pedido.getId()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

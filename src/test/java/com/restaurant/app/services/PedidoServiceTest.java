@@ -49,6 +49,11 @@ class PedidoServiceTest {
         when(items.findByPedidoId(pedido.getId())).thenReturn(List.of(itemGuardado));
         when(pedidos.save(any(Pedido.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
+        ProductoOpcionService opciones = mock(ProductoOpcionService.class);
+        when(opciones.validarSeleccion(any(), any())).thenReturn(
+                new ProductoOpcionService.SeleccionOpciones(
+                        BigDecimal.ZERO, "[]", List.of(), ""));
+
         PedidoService service = new PedidoService(
                 pedidos,
                 items,
@@ -58,6 +63,8 @@ class PedidoServiceTest {
                 mock(SucursalRepository.class),
                 mock(UsuarioContextService.class),
                 mock(PedidoEventosService.class),
+                opciones,
+                mock(CuponService.class),
                 new BigDecimal("16"));
 
         service.agregarItem(pedido.getId(), producto.getId(), 2, null, null);
@@ -89,6 +96,9 @@ class PedidoServiceTest {
         when(pedidos.findById(pedidoId)).thenReturn(Optional.of(pedido));
         when(items.findByPedidoId(pedidoId)).thenReturn(List.of(item));
 
+        ProductoOpcionService opciones = mock(ProductoOpcionService.class);
+        when(opciones.leerDetalle(any())).thenReturn(List.of());
+
         PedidoService service = new PedidoService(
                 pedidos,
                 items,
@@ -98,6 +108,8 @@ class PedidoServiceTest {
                 mock(SucursalRepository.class),
                 mock(UsuarioContextService.class),
                 mock(PedidoEventosService.class),
+                opciones,
+                mock(CuponService.class),
                 new BigDecimal("19"));
 
         var resumen = service.obtenerResumen(pedidoId);
