@@ -56,6 +56,22 @@ public class PedidoEventosService {
         }
     }
 
+    public void publicarNotificacion(UUID sucursalId, Map<String, Object> notificacion) {
+        CopyOnWriteArrayList<SseEmitter> emitters = suscriptores.get(sucursalId);
+        if (emitters == null) {
+            return;
+        }
+        for (SseEmitter emitter : emitters) {
+            try {
+                emitter.send(SseEmitter.event().name("notificacion").data(notificacion));
+            } catch (IOException | IllegalStateException e) {
+                quitarDeTodasLasSucursales(emitter);
+                emitter.completeWithError(e);
+                logger.warn("Se cerró una conexión SSE de notificaciones que ya no estaba disponible.", e);
+            }
+        }
+    }
+
     @Scheduled(fixedRate = 20000)
     public void mantenerConexionesActivas() {
         for (SseEmitter emitter : conexionesActivas) {

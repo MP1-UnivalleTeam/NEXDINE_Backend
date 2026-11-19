@@ -4,6 +4,7 @@ import com.restaurant.app.model.Restaurante;
 import com.restaurant.app.model.Sucursal;
 import com.restaurant.app.repository.RestauranteRepository;
 import com.restaurant.app.repository.SucursalRepository;
+import com.restaurant.app.services.ConfiguracionImpuestoService;
 import com.restaurant.app.services.MenuService;
 import com.restaurant.app.services.MesaService;
 import com.restaurant.app.services.SesionMesaService;
@@ -20,6 +21,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -33,6 +35,7 @@ class ApiControllerMenuPublicoTest {
     private MesaService mesaService;
     private RestauranteRepository restauranteRepository;
     private SucursalRepository sucursalRepository;
+    private ConfiguracionImpuestoService configuracionImpuestoService;
     private ApiController controller;
 
     @BeforeEach
@@ -43,6 +46,8 @@ class ApiControllerMenuPublicoTest {
         mesaService = mock(MesaService.class);
         restauranteRepository = mock(RestauranteRepository.class);
         sucursalRepository = mock(SucursalRepository.class);
+        configuracionImpuestoService = mock(ConfiguracionImpuestoService.class);
+        when(configuracionImpuestoService.obtenerTasaVigente(any())).thenReturn(BigDecimal.ZERO);
         controller = new ApiController(
                 userService,
                 sesionMesaService,
@@ -50,7 +55,7 @@ class ApiControllerMenuPublicoTest {
                 mesaService,
                 restauranteRepository,
                 sucursalRepository,
-                BigDecimal.ZERO
+                configuracionImpuestoService
         );
     }
 

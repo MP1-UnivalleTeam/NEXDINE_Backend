@@ -43,6 +43,9 @@ public class Pedido extends EntidadUuid {
     @Column(precision = 10, scale = 2)
     private BigDecimal descuento = BigDecimal.ZERO;
 
+    @Column(name = "base_gravable", precision = 10, scale = 2)
+    private BigDecimal baseGravable = BigDecimal.ZERO;
+
     @Column(precision = 10, scale = 2)
     private BigDecimal cargos = BigDecimal.ZERO;
 
