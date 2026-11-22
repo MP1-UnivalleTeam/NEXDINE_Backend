@@ -797,6 +797,12 @@ public class PedidoService {
         resumen.put("cuponCodigo", pedido.getCuponCodigo() != null ? pedido.getCuponCodigo() : "");
         resumen.put("pagoMetodo", pedido.getPagoMetodo() != null ? pedido.getPagoMetodo() : "");
         resumen.put("pagoEstado", pedido.getPagoEstado() != null ? pedido.getPagoEstado() : "");
+        resumen.put("pagoImporteRecibido", ceroSiNulo(pedido.getPagoImporteRecibido()));
+        resumen.put("pagoCambio", ceroSiNulo(pedido.getPagoCambio()));
+        resumen.put("pagoReferencia", pedido.getPagoReferencia() != null
+                ? pedido.getPagoReferencia() : "");
+        resumen.put("pagoAnticipo", pedido.isPagoAnticipo());
+        resumen.put("pagoFechaActualizacion", pedido.getPagoFechaActualizacion());
         resumen.put("pagoImporteRecibido",
                 calculadoraPedidoService.normalizarMoneda(pedido.getPagoImporteRecibido()));
         resumen.put("pagoCambio",

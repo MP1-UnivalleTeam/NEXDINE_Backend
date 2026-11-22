@@ -13,6 +13,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -120,6 +121,51 @@ public class PagoService {
     }
 
     @Transactional
+    public Pedido registrarPagoEnLinea(Usuario usuario, UUID pedidoId,
+                                       BigDecimal montoPagado,
+                                       String referencia,
+                                       boolean anticipo) {
+        Pedido pedido = cargarPedidoAutorizado(usuario, pedidoId);
+        if (montoPagado == null || montoPagado.signum() <= 0) {
+            throw new IllegalArgumentException("El monto pagado debe ser mayor que cero.");
+        }
+        if (referencia == null || referencia.isBlank()) {
+            throw new IllegalArgumentException("La referencia del pago en línea es obligatoria.");
+        }
+        if (CatalogoPedidos.PAGO_PAGADO.equals(pedido.getPagoEstado())) {
+            throw new IllegalArgumentException("El pedido ya tiene un pago confirmado.");
+        }
+        if (CatalogoPedidos.ESTADO_CANCELADO.equals(pedido.getEstado())) {
+            throw new IllegalArgumentException(
+                    "No se puede registrar un pago para un pedido cancelado.");
+        }
+
+        String referenciaNormalizada = referencia.trim();
+        if (referenciaNormalizada.length() > 100) {
+            throw new IllegalArgumentException("La referencia admite hasta 100 caracteres.");
+        }
+
+        BigDecimal total = pedidoService.obtenerTotalCalculado(pedidoId);
+        BigDecimal pagado = montoPagado.setScale(2, RoundingMode.HALF_UP);
+        pedido.setPagoMetodo(CatalogoPedidos.METODO_ONLINE);
+        pedido.setPagoImporteRecibido(pagado);
+        pedido.setPagoCambio(BigDecimal.ZERO);
+        pedido.setPagoReferencia(referenciaNormalizada);
+        pedido.setPagoAnticipo(anticipo);
+        pedido.setPagoFechaActualizacion(LocalDateTime.now());
+        pedido.setPagoEstado(anticipo && pagado.compareTo(total) < 0
+                ? "PARCIAL" : (pagado.compareTo(total) >= 0
+                ? CatalogoPedidos.PAGO_PAGADO : "PENDIENTE"));
+        Pedido guardado = pedidoRepository.save(pedido);
+
+        if (CatalogoPedidos.PAGO_PAGADO.equals(guardado.getPagoEstado())) {
+            notificacionService.registrarPagoExitoso(guardado, pagado);
+            publicarNotificacionDespuesDelCommit(guardado, pagado);
+        }
+        return guardado;
+    }
+
+    @Transactional
     public Pedido confirmarPago(Usuario usuario, UUID pedidoId) {
         if (usuario == null || usuario.getRol() == null
                 || !ROLES_CONFIRMACION.contains(usuario.getRol())) {
@@ -164,6 +210,10 @@ public class PagoService {
                 ? BigDecimal.ZERO : pedido.getPagoImporteRecibido());
         respuesta.put("pagoCambio", pedido.getPagoCambio() == null
                 ? BigDecimal.ZERO : pedido.getPagoCambio());
+        respuesta.put("pagoReferencia", pedido.getPagoReferencia() == null
+                ? "" : pedido.getPagoReferencia());
+        respuesta.put("pagoAnticipo", pedido.isPagoAnticipo());
+        respuesta.put("pagoFechaActualizacion", pedido.getPagoFechaActualizacion());
         respuesta.put("total", pedidoService.obtenerTotalCalculado(pedidoId));
         return respuesta;
     }

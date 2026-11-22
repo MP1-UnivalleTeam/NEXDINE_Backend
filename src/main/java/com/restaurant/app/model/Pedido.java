@@ -88,6 +88,15 @@ public class Pedido extends EntidadUuid {
     @Column(name = "pago_estado", length = 20)
     private String pagoEstado;
 
+    @Column(name = "pago_referencia", length = 100)
+    private String pagoReferencia;
+
+    @Column(name = "pago_anticipo", nullable = false)
+    private boolean pagoAnticipo = false;
+
+    @Column(name = "pago_fecha_actualizacion")
+    private LocalDateTime pagoFechaActualizacion;
+
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;
 

@@ -35,9 +35,12 @@ public final class CatalogoPedidos {
     public static final String METODO_CONTRA_ENTREGA = "CONTRA_ENTREGA";
     public static final String METODO_EFECTIVO = "EFECTIVO";
     public static final String METODO_TARJETA = "TARJETA";
+    public static final String METODO_TRANSFERENCIA = "TRANSFERENCIA";
+    public static final String METODO_ONLINE = "ONLINE";
 
     public static final Set<String> METODOS_PAGO = Set.of(
-            METODO_CONTRA_ENTREGA, METODO_EFECTIVO, METODO_TARJETA);
+            METODO_CONTRA_ENTREGA, METODO_EFECTIVO, METODO_TARJETA,
+            METODO_TRANSFERENCIA, METODO_ONLINE);
 
     public static final String NOTIFICACION_PAGO_EXITOSO = "PAGO_EXITOSO";
     public static final String DESTINATARIO_PERSONAL = "PERSONAL";

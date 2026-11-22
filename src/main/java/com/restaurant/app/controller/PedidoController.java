@@ -301,6 +301,27 @@ public class PedidoController {
         }
     }
 
+    @PostMapping("/{pedidoId}/pago/en-linea")
+    public ResponseEntity<?> registrarPagoEnLinea(@PathVariable UUID pedidoId,
+                                                  @RequestParam BigDecimal monto,
+                                                  @RequestParam String referencia,
+                                                  @RequestParam(defaultValue = "false") boolean anticipo,
+                                                  HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (!puedeAccederPago(usuario, pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            Pedido pedido = pagoService.registrarPagoEnLinea(
+                    usuario, pedidoId, monto, referencia, anticipo);
+            return ResponseEntity.ok(pagoService.obtenerPago(usuario, pedidoId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/{pedidoId}/pago")
     public ResponseEntity<?> obtenerPago(@PathVariable UUID pedidoId, HttpSession session) {
         Usuario usuario = usuarioActual(session);
