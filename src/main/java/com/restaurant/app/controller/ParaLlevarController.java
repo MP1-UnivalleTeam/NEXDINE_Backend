@@ -120,6 +120,28 @@ public class ParaLlevarController {
         return normalizado;
     }
 
+    @PostMapping("/pedidos/cancelar-vencidos")
+    public ResponseEntity<?> cancelarVencidos(HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (usuario == null) {
+            return ResponseEntity.status(401).build();
+        }
+        if (!usuarioContextService.esPersonal(usuario)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "No tiene permisos para cancelar pedidos."));
+        }
+        try {
+            int cancelados = pedidoService.cancelarPedidosVencidosParaLlevar();
+            return ResponseEntity.ok(Map.of(
+                    "mensaje", "Pedidos vencidos cancelados.",
+                    "cancelados", cancelados
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(Map.of("error", "No fue posible cancelar los pedidos vencidos."));
+        }
+    }
+
     private Usuario usuarioActual(HttpSession session) {
         Object usuario = session.getAttribute("currentUser");
         return usuario instanceof Usuario u ? u : null;

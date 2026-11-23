@@ -272,6 +272,9 @@ public class PedidoService {
         pedido.setObservaciones(solicitud.observaciones());
         pedido.setEstado("PENDIENTE");
         pedido.setPagoEstado(CatalogoPedidos.PAGO_PENDIENTE);
+        if (CatalogoPedidos.TIPO_PARA_LLEVAR.equals(tipoServicio)) {
+            pedido.setFechaVencimiento(LocalDateTime.now().plusHours(2));
+        }
         pedido.setSucursalId(sucursal.getId());
         Pedido guardado = pedidoRepository.save(pedido);
 
@@ -637,6 +640,25 @@ public class PedidoService {
         return construirResumenes(pedidos);
     }
 
+    @Transactional
+    public int cancelarPedidosVencidosParaLlevar() {
+        LocalDateTime ahora = LocalDateTime.now();
+        List<Pedido> vencidos = pedidoRepository.findByTipoServicioAndEstadoAndFechaVencimientoBefore(
+                CatalogoPedidos.TIPO_PARA_LLEVAR,
+                CatalogoPedidos.ESTADO_PENDIENTE,
+                ahora
+        );
+        int cancelados = 0;
+        for (Pedido pedido : vencidos) {
+            pedido.setEstado(CatalogoPedidos.ESTADO_CANCELADO);
+            pedidoRepository.save(pedido);
+            registrarHistorial(pedido, CatalogoPedidos.ESTADO_PENDIENTE, CatalogoPedidos.ESTADO_CANCELADO, null);
+            publicarPedido(pedido);
+            cancelados++;
+        }
+        return cancelados;
+    }
+
     @Transactional(readOnly = true)
     public BigDecimal obtenerTotalCalculado(UUID pedidoId) {
         Pedido pedido = pedidoRepository.findById(pedidoId)
@@ -992,5 +1014,9 @@ public class PedidoService {
         } else {
             eventosService.publicar(pedido.getSucursalId(), evento);
         }
+    }
+
+    private BigDecimal ceroSiNulo(BigDecimal valor) {
+        return valor != null ? valor : BigDecimal.ZERO;
     }
 }

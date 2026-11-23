@@ -29,4 +29,7 @@ public interface PedidoRepository extends JpaRepository<Pedido, UUID>, JpaSpecif
             UUID mesaId, Collection<String> estadosFinales);
 
     List<Pedido> findByMesaId(UUID mesaId);
+
+    List<Pedido> findByTipoServicioAndEstadoAndFechaVencimientoBefore(
+            String tipoServicio, String estado, java.time.LocalDateTime fechaVencimiento);
 }
