@@ -93,6 +93,9 @@ public class AuthController {
             return ResponseEntity.status(201).body(cliente);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(Map.of("error", "No fue posible registrar la cuenta."));
         }
     }
 
