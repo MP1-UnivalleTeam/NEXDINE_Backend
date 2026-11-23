@@ -17,6 +17,7 @@
         <java.version>21</java.version>
         <cloudinary.version>2.5.0</cloudinary.version>
         <springdoc.version>2.6.0</springdoc.version>
+        <stripe.version>34.2.0</stripe.version>
     </properties>
     <dependencies>
 
@@ -53,6 +54,12 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+            <version>${stripe.version}</version>
         </dependency>
 
         <dependency>
