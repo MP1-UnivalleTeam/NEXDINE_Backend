@@ -97,6 +97,9 @@ public class Pedido extends EntidadUuid {
     @Column(name = "pago_fecha_actualizacion")
     private LocalDateTime pagoFechaActualizacion;
 
+    @Column(name = "fecha_vencimiento")
+    private LocalDateTime fechaVencimiento;
+
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;
 
