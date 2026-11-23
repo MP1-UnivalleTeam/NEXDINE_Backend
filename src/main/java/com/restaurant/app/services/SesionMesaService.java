@@ -131,6 +131,7 @@ public static final String TIPO_DOMICILIO = "DOMICILIO";
         SesionMesa sesion = optionalSesion.get();
 
         sesion.setTipoServicio(tipo);
+        sesion.setUltimaActividad(LocalDateTime.now());
         sesionMesaRepository.save(sesion);
 
         return tipo;
@@ -140,8 +141,12 @@ public static final String TIPO_DOMICILIO = "DOMICILIO";
         if (token == null || token.isBlank()) {
             return Optional.empty();
         }
+        LocalDateTime limite = LocalDateTime.now().minusMinutes(MINUTOS_INACTIVIDAD);
         return sesionMesaRepository.findByToken(token)
-                .map(s -> s.getTipoServicio());
+                .filter(s -> s.isActiva()
+                        && s.getUltimaActividad() != null
+                        && !s.getUltimaActividad().isBefore(limite))
+                .map(SesionMesa::getTipoServicio);
     }
 
     public void actualizarActividad(String token) {

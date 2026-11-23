@@ -231,6 +231,15 @@ public Optional<Usuario> getUserById(@NonNull UUID id) {
     return userRepository.findById(id);
 }
 
+public boolean existeNombre(String nombre) {
+    return nombre != null && !nombre.isBlank()
+            && userRepository.findByNombre(nombre.trim()).isPresent();
+}
+
+public Usuario guardarUsuario(Usuario usuario) {
+    return userRepository.save(usuario);
+}
+
 public UUID obtenerSucursalAsignada(Usuario usuario) {
 
     if (usuario == null) {

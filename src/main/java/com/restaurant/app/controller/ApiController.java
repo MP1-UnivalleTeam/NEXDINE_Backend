@@ -7,12 +7,12 @@ import com.restaurant.app.model.Sucursal;
 import com.restaurant.app.model.Usuario;
 import com.restaurant.app.repository.RestauranteRepository;
 import com.restaurant.app.repository.SucursalRepository;
+import com.restaurant.app.services.ConfiguracionImpuestoService;
 import com.restaurant.app.services.MenuService;
 import com.restaurant.app.services.MesaService;
 import com.restaurant.app.services.SesionMesaService;
 import com.restaurant.app.services.UserService;
 import jakarta.servlet.http.HttpSession;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.*;
@@ -35,7 +35,7 @@ public class ApiController {
     private final MesaService mesaService;
     private final RestauranteRepository restauranteRepository;
     private final SucursalRepository sucursalRepository;
-    private final BigDecimal tasaImpuesto;
+    private final ConfiguracionImpuestoService configuracionImpuestoService;
 
     public ApiController(UserService userService,
                          SesionMesaService sesionMesaService,
@@ -43,14 +43,14 @@ public class ApiController {
                          MesaService mesaService,
                          RestauranteRepository restauranteRepository,
                          SucursalRepository sucursalRepository,
-                         @Value("${app.pedidos.tasa-impuesto:0}") BigDecimal tasaImpuesto) {
+                         ConfiguracionImpuestoService configuracionImpuestoService) {
         this.userService = userService;
         this.sesionMesaService = sesionMesaService;
         this.menuService = menuService;
         this.mesaService = mesaService;
         this.restauranteRepository = restauranteRepository;
         this.sucursalRepository = sucursalRepository;
-        this.tasaImpuesto = tasaImpuesto;
+        this.configuracionImpuestoService = configuracionImpuestoService;
     }
 
     @GetMapping("/auth/check")
@@ -115,7 +115,7 @@ public class ApiController {
             response.put("codigoMesa", mesaValida.getCodigo());
             response.put("token", sesion.getToken());
             response.put("sucursalId", mesaValida.getSucursalId());
-            response.put("tasaImpuesto", tasaImpuesto);
+            response.put("tasaImpuesto", tasaDeSucursal(mesaValida.getSucursalId()));
             sucursalRepository.findById(mesaValida.getSucursalId())
                     .ifPresent(sucursal -> response.put("sucursalNombre", sucursal.getNombre()));
             response.put("menu", menuService
@@ -148,7 +148,7 @@ public class ApiController {
             Map<String, Object> response = new HashMap<>();
             response.put("restaurante", restaurante.getNombre());
             response.put("slug", restaurante.getSlug());
-            response.put("tasaImpuesto", tasaImpuesto);
+            response.put("tasaImpuesto", tasaDeRestaurante(restaurante.getId()));
 
             List<Sucursal> sucursales = sucursalRepository
                     .findByRestauranteIdAndActivaTrue(restaurante.getId());
@@ -218,7 +218,7 @@ public class ApiController {
             Map<String, Object> response = new HashMap<>();
             response.put("mesa", mesaOpt.get().getNombre());
             response.put("sucursalId", mesaOpt.get().getSucursalId());
-            response.put("tasaImpuesto", tasaImpuesto);
+            response.put("tasaImpuesto", tasaDeSucursal(mesaOpt.get().getSucursalId()));
             sucursalRepository.findById(mesaOpt.get().getSucursalId())
                     .ifPresent(sucursal -> response.put("sucursalNombre", sucursal.getNombre()));
             response.put("menu", menuService
@@ -275,6 +275,10 @@ public class ApiController {
         if (idMesa == null || idMesa.isEmpty()) {
             return ResponseEntity.badRequest().body("idMesa es requerido");
         }
+        if (mesaService.buscarPorCodigoActiva(idMesa).isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of(
+                    "error", "La mesa no existe o está inactiva."));
+        }
 
         SesionMesa sesion = sesionMesaService.crearSesion(idMesa);
 
@@ -305,6 +309,20 @@ public class ApiController {
         String token = body.get("token");
         sesionMesaService.cerrarSesion(token);
         return ResponseEntity.ok("Sesión cerrada");
+    }
+
+    private BigDecimal tasaDeSucursal(UUID sucursalId) {
+        if (sucursalId == null) {
+            return BigDecimal.ZERO;
+        }
+        return sucursalRepository.findById(sucursalId)
+                .map(Sucursal::getRestauranteId)
+                .map(this::tasaDeRestaurante)
+                .orElse(BigDecimal.ZERO);
+    }
+
+    private BigDecimal tasaDeRestaurante(UUID restauranteId) {
+        return configuracionImpuestoService.obtenerTasaVigente(restauranteId);
     }
 
 }

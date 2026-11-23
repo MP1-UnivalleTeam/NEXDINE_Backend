@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.util.UUID;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class UsuarioContextService {
@@ -216,6 +217,18 @@ public class UsuarioContextService {
 
     public boolean esOperativoDeSucursal(Usuario usuario) {
         return usuario != null && !"SUPERADMIN".equals(usuario.getRol()) && !"CLIENTE".equals(usuario.getRol());
+    }
+
+    public boolean esPersonal(Usuario usuario) {
+        return usuario != null && usuario.getRol() != null
+                && Set.of("MESERO", "COCINERO", "ADMINISTRADOR", "SUPERADMIN")
+                .contains(usuario.getRol());
+    }
+
+    public boolean esMeseroOAdmin(Usuario usuario) {
+        return usuario != null && usuario.getRol() != null
+                && Set.of("MESERO", "ADMINISTRADOR", "SUPERADMIN")
+                .contains(usuario.getRol());
     }
 
     public List<UUID> listarIdsEmpleadosDeSucursal(UUID sucursalId) {

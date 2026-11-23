@@ -182,6 +182,7 @@ La migración de base de datos está en `archivos IA/migracion_sku_duplicados.sq
 | Método | Ruta | Descripción |
 |---|---|---|
 | POST | `/login` | Autentica un usuario y crea la sesión |
+| POST | `/api/auth/register` | Registra públicamente una cuenta de cliente e inicia sesión |
 | GET | `/logout` | Cierra la sesión actual |
 | GET | `/api/auth/check` | Comprueba si existe una sesión activa |
 | GET | `/api/auth/me` | Obtiene el usuario autenticado |
@@ -236,6 +237,11 @@ incluye `subtotal`, `descuento`, `impuestos`, `tasaImpuesto`, `propina`,
 | PUT | `/api/cupones/admin/{id}` | Administrador o superadministrador | Edita propiedades del cupón |
 | PATCH | `/api/cupones/admin/{id}/estado?activo={boolean}` | Administrador o superadministrador | Activa o desactiva un cupón |
 | DELETE | `/api/cupones/admin/{id}` | Administrador o superadministrador | Elimina únicamente si no tiene usos ni pedidos relacionados |
+| PUT | `/api/pedidos/{pedidoId}/pago/metodo?metodo=EFECTIVO` | Propietario invitado o personal autorizado | Selecciona efectivo, tarjeta, contra entrega, transferencia o pago en línea |
+| PUT | `/api/pedidos/{pedidoId}/pago/efectivo?montoRecibido=100000` | Propietario invitado o personal autorizado | Registra monto recibido y calcula cambio |
+| POST | `/api/pedidos/{pedidoId}/pago/en-linea?monto=50000&referencia=REF123&anticipo=true` | Propietario invitado o personal autorizado | Registra pago en línea o anticipo con referencia |
+| POST | `/api/pedidos/{pedidoId}/pago/confirmar` | Mesero, administrador o superadministrador | Confirma el pago y genera la notificación |
+| GET | `/api/pedidos/{pedidoId}/pago` | Propietario invitado o personal autorizado | Consulta método, estado, monto recibido y cambio |
 
 Las observaciones de línea se almacenan en `items_pedido.observaciones` como
 texto plano; se normalizan y validan en el servidor. El identificador de pedido
@@ -247,6 +253,28 @@ Los cupones con historial no se borran físicamente: la API responde `409` y se
 deben desactivar para conservar su referencia en pedidos anteriores. La tabla
 `cupones` y sus campos de vigencia/uso ya están definidos en la migración V3;
 no se requiere una migración nueva para estas operaciones.
+
+### Registro público de clientes y pagos
+
+`POST /api/auth/register` acepta JSON:
+
+```json
+{
+  "nombre": "cliente1",
+  "contrasena": "secreto1",
+  "celular": "3001234567",
+  "direccion": "Calle 1",
+  "correo": "cliente@example.com"
+}
+```
+
+El registro crea una cuenta `CLIENTE`, inicia la sesión y rechaza nombres
+duplicados o contraseñas menores de 6 caracteres.
+
+Los estados de pago disponibles son `PENDIENTE`, `PAGADO`, `PARCIAL` y pueden
+registrarse referencias y anticipo. El endpoint en línea guarda el comprobante;
+no sustituye la integración con un proveedor externo ni verifica un cobro real
+sin validación del proveedor.
 
 El cuerpo de `POST /api/pedidos/manual` usa el formato:
 

@@ -3,6 +3,7 @@ package com.restaurant.app.services;
 import com.restaurant.app.model.ItemPedido;
 import com.restaurant.app.model.Pedido;
 import com.restaurant.app.model.Producto;
+import com.restaurant.app.repository.HistorialPedidoRepository;
 import com.restaurant.app.repository.ItemPedidoRepository;
 import com.restaurant.app.repository.MesaRepository;
 import com.restaurant.app.repository.PedidoRepository;
@@ -36,6 +37,7 @@ class PedidoServiceTest {
         pedido.setDescuento(BigDecimal.ZERO);
         pedido.setPropina(new BigDecimal("5.00"));
         pedido.setCargos(BigDecimal.ZERO);
+        pedido.setTasaImpuesto(new BigDecimal("16.00"));
         Producto producto = new Producto();
         producto.setId(UUID.randomUUID());
         producto.setNombre("Plato");
@@ -67,7 +69,10 @@ class PedidoServiceTest {
                 mock(PedidoEventosService.class),
                 opciones,
                 mock(CuponService.class),
-                new BigDecimal("16"));
+                mock(HistorialPedidoRepository.class),
+                mock(MesaService.class),
+                mock(ConfiguracionImpuestoService.class),
+                new CalculadoraPedidoService());
 
         ItemPedido guardado = service.agregarItem(
                 pedido.getId(), producto.getId(), 2, null, "  Sin cebolla, por favor  ");
@@ -117,7 +122,10 @@ class PedidoServiceTest {
                 mock(PedidoEventosService.class),
                 opciones,
                 mock(CuponService.class),
-                new BigDecimal("19"));
+                mock(HistorialPedidoRepository.class),
+                mock(MesaService.class),
+                mock(ConfiguracionImpuestoService.class),
+                new CalculadoraPedidoService());
 
         var resumen = service.obtenerResumen(pedidoId);
 
