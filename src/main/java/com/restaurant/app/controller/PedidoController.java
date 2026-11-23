@@ -356,6 +356,30 @@ public class PedidoController {
         }
     }
 
+    @DeleteMapping({"/{pedidoId}/pago", "/{pedidoId}/pago/stripe"})
+    public ResponseEntity<?> cancelarPagoStripe(
+            @PathVariable UUID pedidoId,
+            HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (!puedeAccederPago(usuario, pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return ResponseEntity.ok(
+                    stripePaymentService.cancelarPaymentIntent(usuario, pedidoId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        } catch (StripePaymentService.StripeNoConfiguradoException e) {
+            return ResponseEntity.status(503).body(Map.of("error", e.getMessage()));
+        } catch (StripeException e) {
+            logger.error("Stripe rechazó la cancelación del pago. requestId={}", e.getRequestId());
+            return ResponseEntity.status(502)
+                    .body(Map.of("error", "Stripe no pudo cancelar el pago. Inténtalo nuevamente."));
+        }
+    }
+
     @GetMapping("/{pedidoId}/pago")
     public ResponseEntity<?> obtenerPago(@PathVariable UUID pedidoId, HttpSession session) {
         Usuario usuario = usuarioActual(session);

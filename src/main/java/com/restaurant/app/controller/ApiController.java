@@ -187,6 +187,35 @@ public class ApiController {
         }
     }
 
+    @GetMapping("/clientes/menus")
+    public ResponseEntity<?> menusDisponiblesParaCliente(HttpSession session) {
+        Usuario usuario = (Usuario) session.getAttribute("currentUser");
+        if (usuario == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "No hay una sesión activa."));
+        }
+        if (!"CLIENTE".equals(usuario.getRol())) {
+            return ResponseEntity.status(403).body(Map.of("error", "Acceso exclusivo para clientes."));
+        }
+
+        List<Map<String, String>> menus = restauranteRepository.findByActivoTrueOrderByNombreAsc()
+                .stream()
+                .filter(restaurante -> restaurante.getSlug() != null
+                        && !restaurante.getSlug().isBlank())
+                .map(restaurante -> Map.of(
+                        "restaurante", restaurante.getNombre(),
+                        "slug", restaurante.getSlug(),
+                        "ruta", "/menu/" + restaurante.getSlug()))
+                .toList();
+
+        Map<String, Object> respuesta = new HashMap<>();
+        respuesta.put("menus", menus);
+        if (menus.size() == 1) {
+            respuesta.put("slug", menus.get(0).get("slug"));
+            respuesta.put("ruta", menus.get(0).get("ruta"));
+        }
+        return ResponseEntity.ok(respuesta);
+    }
+
     @GetMapping("/menu/por-sesion")
     public ResponseEntity<?> menuPorSesion(@RequestParam String token) {
 

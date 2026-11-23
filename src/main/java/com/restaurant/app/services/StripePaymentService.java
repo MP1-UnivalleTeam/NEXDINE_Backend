@@ -186,6 +186,62 @@ public class StripePaymentService {
     }
 
     @Transactional
+    public Map<String, Object> cancelarPaymentIntent(Usuario usuario, UUID pedidoId)
+            throws StripeException {
+        StripeClient stripe = clienteStripe();
+        Pedido pedido = pedidoRepository.findByIdForUpdate(pedidoId)
+                .map(p -> cargarPedidoAutorizado(usuario, p))
+                .orElseThrow(() -> new IllegalArgumentException("Pedido no encontrado."));
+        if (CatalogoPedidos.PAGO_PAGADO.equals(pedido.getPagoEstado())) {
+            throw new IllegalStateException("El pedido ya tiene un pago confirmado.");
+        }
+
+        List<PagoStripe> activos = pagoStripeRepository
+                .findByPedidoIdAndEstadoInOrderByFechaCreacionDesc(
+                        pedidoId, ACTIVE_INTENT_STATUSES);
+        if (activos.isEmpty()) {
+            throw new IllegalArgumentException("No hay un pago de Stripe pendiente para cancelar.");
+        }
+
+        PagoStripe pago = pagoStripeRepository
+                .findByPaymentIntentIdForUpdate(activos.get(0).getPaymentIntentId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "No se encontró el intento de pago asociado al pedido."));
+        PaymentIntent intent = stripe.v1().paymentIntents().retrieve(pago.getPaymentIntentId());
+        if ("succeeded".equals(intent.getStatus())) {
+            throw new IllegalStateException("El pago ya fue procesado y no se puede cancelar.");
+        }
+        if (!"canceled".equals(intent.getStatus())) {
+            intent = stripe.v1().paymentIntents().cancel(intent.getId());
+        }
+        if (!"canceled".equals(intent.getStatus())) {
+            throw new IllegalStateException("Stripe no confirmó la cancelación del pago.");
+        }
+
+        pago.setEstado("CANCELADO");
+        pago.setFechaActualizacion(LocalDateTime.now());
+        pagoStripeRepository.save(pago);
+
+        BigDecimal pagado = pagoStripeRepository.sumarPagosExitosos(pedidoId);
+        if (pagado == null) {
+            pagado = BigDecimal.ZERO;
+        }
+        pedido.setPagoEstado(pagado.signum() > 0 ? "PARCIAL" : "CANCELADO");
+        pedido.setPagoImporteRecibido(pagado);
+        pedido.setPagoFechaActualizacion(LocalDateTime.now());
+        pedidoRepository.save(pedido);
+        publicarEstadoPagoDespuesDelCommit(pedido, pagado);
+
+        Map<String, Object> respuesta = new LinkedHashMap<>();
+        respuesta.put("pedidoId", pedidoId);
+        respuesta.put("paymentIntentId", pago.getPaymentIntentId());
+        respuesta.put("pagoEstado", pedido.getPagoEstado());
+        respuesta.put("estadoIntento", pago.getEstado());
+        respuesta.put("pagoImporteRecibido", pagado);
+        return respuesta;
+    }
+
+    @Transactional
     public void procesarWebhook(Event event) {
         String eventType = event.getType();
         if (!Set.of("payment_intent.succeeded", "payment_intent.payment_failed",

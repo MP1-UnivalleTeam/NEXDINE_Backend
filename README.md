@@ -228,6 +228,7 @@ incluye `subtotal`, `descuento`, `impuestos`, `tasaImpuesto`, `propina`,
 | GET | `/api/clientes/favoritos` | Cliente autenticado | Lista productos favoritos del perfil |
 | POST | `/api/clientes/favoritos/{productoId}` | Cliente autenticado | Guarda un producto disponible como favorito |
 | DELETE | `/api/clientes/favoritos/{productoId}` | Cliente autenticado | Quita un favorito |
+| GET | `/api/clientes/menus` | Cliente autenticado | Devuelve los restaurantes activos con su slug y ruta pública de menú |
 | GET | `/mesas` | Administrador, superadmin o mesero | Lista mesas disponibles para elegir |
 | POST | `/api/pedidos/manual` | Personal autenticado | Registra un pedido para una mesa y sus productos |
 | POST | `/api/pedidos/invitado?sucursalId={uuid}` | Público | Asocia un pedido en línea a la sucursal elegida (parámetro opcional) |
@@ -247,6 +248,7 @@ incluye `subtotal`, `descuento`, `impuestos`, `tasaImpuesto`, `propina`,
 | PUT | `/api/pedidos/{pedidoId}/pago/metodo?metodo=EFECTIVO` | Propietario invitado o personal autorizado | Selecciona efectivo, tarjeta, contra entrega, transferencia o pago en línea |
 | PUT | `/api/pedidos/{pedidoId}/pago/efectivo?montoRecibido=100000` | Propietario invitado o personal autorizado | Registra monto recibido y calcula cambio |
 | POST | `/api/pedidos/{pedidoId}/pago/stripe?anticipo=false` | Propietario invitado o personal autorizado | Crea/reutiliza un PaymentIntent y devuelve `clientSecret` |
+| DELETE | `/api/pedidos/{pedidoId}/pago` | Propietario invitado o personal autorizado | Cancela el PaymentIntent pendiente sin cancelar el pedido |
 | POST | `/api/stripe/webhook` | Stripe (firma obligatoria) | Confirma el pago y actualiza su estado de forma idempotente |
 | POST | `/api/pedidos/{pedidoId}/pago/en-linea?monto=50000&referencia=REF123&anticipo=true` | Propietario invitado o personal autorizado | Registra una referencia externa; no valida un cobro real |
 | POST | `/api/pedidos/{pedidoId}/pago/confirmar` | Mesero, administrador o superadministrador | Confirma el pago y genera la notificación |

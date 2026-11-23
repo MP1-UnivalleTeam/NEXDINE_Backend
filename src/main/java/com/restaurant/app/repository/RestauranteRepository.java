@@ -8,12 +8,15 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.UUID;
 import java.util.Optional;
+import java.util.List;
 
 public interface RestauranteRepository extends JpaRepository<Restaurante, UUID> {
 
     Optional<Restaurante> findBySlug(String slug);
 
     Optional<Restaurante> findBySlugAndActivoTrue(String slug);
+
+    List<Restaurante> findByActivoTrueOrderByNombreAsc();
 
     boolean existsBySlug(String slug);
 
