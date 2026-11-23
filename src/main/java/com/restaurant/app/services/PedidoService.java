@@ -825,10 +825,6 @@ public class PedidoService {
                 ? pedido.getPagoReferencia() : "");
         resumen.put("pagoAnticipo", pedido.isPagoAnticipo());
         resumen.put("pagoFechaActualizacion", pedido.getPagoFechaActualizacion());
-        resumen.put("pagoImporteRecibido",
-                calculadoraPedidoService.normalizarMoneda(pedido.getPagoImporteRecibido()));
-        resumen.put("pagoCambio",
-                calculadoraPedidoService.normalizarMoneda(pedido.getPagoCambio()));
         resumen.put("fechaCreacion", pedido.getFechaCreacion());
         resumen.put("observaciones", pedido.getObservaciones() != null ? pedido.getObservaciones() : "");
         return resumen;
@@ -841,15 +837,15 @@ public class PedidoService {
                 ? calculadoraPedidoService.normalizarMoneda(pedido.getSubtotal())
                 : calculado.subtotal();
         BigDecimal descuento = pedido.getDescuento() != null
-                ? calculadoraPedidoService.normalizarMoneda(pedido.getDescuento())
-                .max(BigDecimal.ZERO)
-                .min(subtotal)
+                ? limitarEntreCeroYSubtotal(
+                        calculadoraPedidoService.normalizarMoneda(pedido.getDescuento()),
+                        subtotal)
                 : calculado.descuento();
         BigDecimal base = pedido.getBaseGravable() != null
                 && pedido.getBaseGravable().signum() >= 0
                 && pedido.getBaseGravable().compareTo(BigDecimal.ZERO) > 0
                 ? calculadoraPedidoService.normalizarMoneda(pedido.getBaseGravable())
-                : subtotal.subtract(descuento).max(BigDecimal.ZERO);
+                : mayorQueCero(subtotal.subtract(descuento));
         BigDecimal tasa = pedido.getTasaImpuesto() != null
                 ? calculadoraPedidoService.normalizarTasa(pedido.getTasaImpuesto())
                 : calculado.tasaImpuesto();
@@ -868,6 +864,24 @@ public class PedidoService {
                 : base.add(impuestos).add(propina).add(cargos);
         return new CalculadoraPedidoService.Desglose(subtotal, descuento, base,
                 tasa, impuestos, propina, cargos, total);
+    }
+
+    private BigDecimal ceroSiNulo(BigDecimal valor) {
+        return calculadoraPedidoService.normalizarMoneda(valor);
+    }
+
+    private BigDecimal mayorQueCero(BigDecimal valor) {
+        BigDecimal normalizado = calculadoraPedidoService.normalizarMoneda(valor);
+        return normalizado.compareTo(BigDecimal.ZERO) < 0
+                ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                : normalizado;
+    }
+
+    private BigDecimal limitarEntreCeroYSubtotal(BigDecimal valor, BigDecimal subtotal) {
+        BigDecimal normalizado = mayorQueCero(valor);
+        return normalizado.compareTo(subtotal) > 0
+                ? calculadoraPedidoService.normalizarMoneda(subtotal)
+                : normalizado;
     }
 
     private void recalcularTotales(Pedido pedido, BigDecimal tasa) {

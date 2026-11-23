@@ -7,8 +7,12 @@ import com.restaurant.app.model.Usuario;
 import com.restaurant.app.services.PagoService;
 import com.restaurant.app.services.PedidoEventosService;
 import com.restaurant.app.services.PedidoService;
+import com.restaurant.app.services.StripePaymentService;
 import com.restaurant.app.util.PedidosSesionHttp;
+import com.stripe.exception.StripeException;
 import jakarta.servlet.http.HttpSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -23,16 +27,21 @@ import java.util.UUID;
 @RequestMapping("/api/pedidos")
 public class PedidoController {
 
+    private static final Logger logger = LoggerFactory.getLogger(PedidoController.class);
+
     private final PedidoService pedidoService;
     private final PagoService pagoService;
     private final PedidoEventosService eventosService;
+    private final StripePaymentService stripePaymentService;
 
     public PedidoController(PedidoService pedidoService,
                             PagoService pagoService,
-                            PedidoEventosService eventosService) {
+                            PedidoEventosService eventosService,
+                            StripePaymentService stripePaymentService) {
         this.pedidoService = pedidoService;
         this.pagoService = pagoService;
         this.eventosService = eventosService;
+        this.stripePaymentService = stripePaymentService;
     }
 
     @PostMapping("/manual")
@@ -319,6 +328,31 @@ public class PedidoController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{pedidoId}/pago/stripe")
+    public ResponseEntity<?> crearPagoStripe(
+            @PathVariable UUID pedidoId,
+            @RequestParam(defaultValue = "false") boolean anticipo,
+            HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (!puedeAccederPago(usuario, pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return ResponseEntity.ok(stripePaymentService.crearPaymentIntent(
+                    usuario, pedidoId, anticipo));
+        } catch (StripePaymentService.StripeNoConfiguradoException e) {
+            return ResponseEntity.status(503).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        } catch (StripeException e) {
+            logger.error("Stripe rechazó la creación del pago. requestId={}", e.getRequestId());
+            return ResponseEntity.status(502)
+                    .body(Map.of("error", "Stripe no pudo iniciar el pago. Inténtalo nuevamente."));
         }
     }
 

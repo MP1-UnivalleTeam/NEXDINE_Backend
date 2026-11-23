@@ -68,6 +68,19 @@ public class NotificacionService {
         eventosService.publicarNotificacion(pedido.getSucursalId(), evento);
     }
 
+    public void publicarEstadoPago(Pedido pedido, BigDecimal montoPagado) {
+        if (pedido.getSucursalId() == null) {
+            return;
+        }
+        Map<String, Object> evento = new LinkedHashMap<>();
+        evento.put("tipo", "PAGO_ACTUALIZADO");
+        evento.put("pedidoId", pedido.getId());
+        evento.put("numeroSeguimiento", pedido.getNumeroSeguimiento());
+        evento.put("pagoEstado", pedido.getPagoEstado());
+        evento.put("pagoImporteRecibido", montoPagado);
+        eventosService.publicarNotificacion(pedido.getSucursalId(), evento);
+    }
+
     @Transactional(readOnly = true)
     public List<Notificacion> listar(Usuario usuario) {
         if (usuario == null) {
