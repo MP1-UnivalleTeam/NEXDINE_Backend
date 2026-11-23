@@ -866,10 +866,6 @@ public class PedidoService {
                 tasa, impuestos, propina, cargos, total);
     }
 
-    private BigDecimal ceroSiNulo(BigDecimal valor) {
-        return calculadoraPedidoService.normalizarMoneda(valor);
-    }
-
     private BigDecimal mayorQueCero(BigDecimal valor) {
         BigDecimal normalizado = calculadoraPedidoService.normalizarMoneda(valor);
         return normalizado.compareTo(BigDecimal.ZERO) < 0
