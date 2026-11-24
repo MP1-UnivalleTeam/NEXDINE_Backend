@@ -1,5 +1,6 @@
 package com.restaurant.app.controller;
 
+import com.restaurant.app.model.Administrador;
 import com.restaurant.app.model.Cliente;
 import com.restaurant.app.model.Usuario;
 import com.restaurant.app.services.UserService;
@@ -52,5 +53,31 @@ class AuthControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.nombre").value("cliente1"))
                 .andExpect(jsonPath("$.rol").value("CLIENTE"));
+    }
+
+    @Test
+    void registraDuenoCreadoComoAdministrador() throws Exception {
+        Usuario dueno = new Administrador();
+        dueno.setNombre("dueno1");
+        dueno.setRol("ADMINISTRADOR");
+        dueno.setEstado(true);
+
+        when(userService.existeNombre("dueno1")).thenReturn(false);
+        when(userService.createUser(eq("dueno1"), eq("secreto1"),
+                eq("ADMINISTRADOR"), any(), any(), eq(null))).thenReturn(dueno);
+
+        mockMvc.perform(post("/api/auth/register/dueño")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "nombre": "dueno1",
+                                  "contraseña": "secreto1",
+                                  "celular": "3001234567",
+                                  "direccion": "Calle 1"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.nombre").value("dueno1"))
+                .andExpect(jsonPath("$.rol").value("ADMINISTRADOR"));
     }
 }
