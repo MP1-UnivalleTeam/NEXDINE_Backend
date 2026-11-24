@@ -331,6 +331,26 @@ public class PedidoController {
         }
     }
 
+    @PostMapping("/{pedidoId}/pago/cancelar")
+    public ResponseEntity<?> cancelarPago(@PathVariable UUID pedidoId, HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (usuario == null) {
+            return ResponseEntity.status(401).build();
+        }
+        if (!esMeseroOAdmin(usuario)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "No tiene permisos para cancelar pagos."));
+        }
+        try {
+            Pedido pedido = pagoService.cancelarPago(usuario, pedidoId);
+            return ResponseEntity.ok(pedidoService.obtenerResumen(pedido.getId()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @PostMapping("/{pedidoId}/pago/stripe")
     public ResponseEntity<?> crearPagoStripe(
             @PathVariable UUID pedidoId,

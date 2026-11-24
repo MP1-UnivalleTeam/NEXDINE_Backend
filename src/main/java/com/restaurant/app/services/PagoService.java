@@ -196,6 +196,50 @@ public class PagoService {
         return guardado;
     }
 
+    @Transactional
+    public Pedido cancelarPago(Usuario usuario, UUID pedidoId) {
+        Pedido pedido = cargarPedidoAutorizado(usuario, pedidoId);
+        if (CatalogoPedidos.ESTADO_CANCELADO.equals(pedido.getEstado())) {
+            throw new IllegalArgumentException("No se puede cancelar el pago de un pedido cancelado.");
+        }
+
+        String estadoPago = pedido.getPagoEstado() == null
+                ? CatalogoPedidos.PAGO_PENDIENTE
+                : pedido.getPagoEstado();
+        if (CatalogoPedidos.PAGO_CANCELADO.equals(estadoPago)
+                || "RECHAZADO".equals(estadoPago)) {
+            throw new IllegalArgumentException("El pago no se puede cancelar en su estado actual.");
+        }
+        if (!CatalogoPedidos.PAGO_PENDIENTE.equals(estadoPago)
+                && !CatalogoPedidos.PAGO_PARCIAL.equals(estadoPago)
+                && !CatalogoPedidos.PAGO_PAGADO.equals(estadoPago)) {
+            throw new IllegalStateException("El pago no está activo y no puede cancelarse.");
+        }
+
+        String metodo = pedido.getPagoMetodo() == null ? "" : pedido.getPagoMetodo();
+        if (metodo.isBlank() || CatalogoPedidos.METODO_TARJETA.equals(metodo)
+                || CatalogoPedidos.METODO_ONLINE.equals(metodo)) {
+            throw new IllegalArgumentException(
+                    "Solo se puede cancelar un pago local con método EFECTIVO, TRANSFERENCIA o CONTRA_ENTREGA.");
+        }
+
+        pedido.setPagoEstado(CatalogoPedidos.PAGO_CANCELADO);
+        pedido.setPagoMetodo("");
+        pedido.setPagoImporteRecibido(BigDecimal.ZERO);
+        pedido.setPagoCambio(BigDecimal.ZERO);
+        pedido.setPagoReferencia(null);
+        pedido.setPagoAnticipo(false);
+        pedido.setPagoFechaActualizacion(LocalDateTime.now());
+        Pedido guardado = pedidoRepository.save(pedido);
+
+        if (!CatalogoPedidos.ESTADOS_FINALES.contains(pedido.getEstado())
+                && pedido.getMesaId() != null) {
+            mesaService.ocuparMesa(pedido.getMesaId());
+        }
+        publicarEstadoPagoDespuesDelCommit(guardado, BigDecimal.ZERO);
+        return guardado;
+    }
+
     @Transactional(readOnly = true)
     public Map<String, Object> obtenerPago(Usuario usuario, UUID pedidoId) {
         Pedido pedido = cargarPedidoAutorizado(usuario, pedidoId);
@@ -216,6 +260,19 @@ public class PagoService {
         respuesta.put("pagoFechaActualizacion", pedido.getPagoFechaActualizacion());
         respuesta.put("total", pedidoService.obtenerTotalCalculado(pedidoId));
         return respuesta;
+    }
+
+    private void publicarEstadoPagoDespuesDelCommit(Pedido pedido, BigDecimal monto) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    notificacionService.publicarEstadoPago(pedido, monto);
+                }
+            });
+        } else {
+            notificacionService.publicarEstadoPago(pedido, monto);
+        }
     }
 
     private Pedido cargarPedidoAutorizado(Usuario usuario, UUID pedidoId) {

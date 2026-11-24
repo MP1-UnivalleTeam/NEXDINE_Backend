@@ -186,6 +186,47 @@ class PagoServiceTest {
         verify(pedidoRepository, never()).save(any());
     }
 
+    @Test
+    void cancelarPagoAprobadoLimpiaPagoSinCancelarPedido() {
+        Pedido pedido = pedido("MESA", "PAGADO");
+        pedido.setMesaId(UUID.randomUUID());
+        pedido.setPagoMetodo("EFECTIVO");
+        pedido.setPagoImporteRecibido(new BigDecimal("100.00"));
+        pedido.setPagoCambio(BigDecimal.ZERO);
+        Sucursal sucursal = sucursal(pedido.getSucursalId());
+        Mesero mesero = mesero(pedido.getSucursalId());
+        when(pedidoRepository.findById(pedido.getId())).thenReturn(Optional.of(pedido));
+        when(sucursalRepository.findById(pedido.getSucursalId())).thenReturn(Optional.of(sucursal));
+        when(usuarioContextService.obtenerContexto(mesero)).thenReturn(
+                new UsuarioContextService.UsuarioContext(
+                        sucursal.getRestauranteId(), pedido.getSucursalId(), "MESERO"));
+        when(pedidoRepository.save(any(Pedido.class))).thenAnswer(i -> i.getArgument(0));
+
+        Pedido guardado = pagoService.cancelarPago(mesero, pedido.getId());
+
+        assertEquals("CANCELADO", guardado.getPagoEstado());
+        assertEquals("", guardado.getPagoMetodo());
+        assertEquals(BigDecimal.ZERO, guardado.getPagoImporteRecibido());
+        assertEquals(BigDecimal.ZERO, guardado.getPagoCambio());
+        assertEquals("CONFIRMADO", guardado.getEstado());
+        verify(pedidoRepository).save(any(Pedido.class));
+        verify(mesaService).ocuparMesa(pedido.getMesaId());
+    }
+
+    @Test
+    void cancelarPagoConTarjetaNoSeCancelaLocalmente() {
+        Pedido pedido = pedido("DOMICILIO", "PENDIENTE");
+        pedido.setPagoMetodo("TARJETA");
+        pedido.setPagoImporteRecibido(BigDecimal.ZERO);
+        when(pedidoRepository.findById(pedido.getId())).thenReturn(Optional.of(pedido));
+
+        IllegalArgumentException excepcion = assertThrows(IllegalArgumentException.class,
+                () -> pagoService.cancelarPago(null, pedido.getId()));
+
+        assertTrue(excepcion.getMessage().contains("cancelar un pago local"));
+        verify(pedidoRepository, never()).save(any());
+    }
+
     private Sucursal sucursal(UUID sucursalId) {
         Sucursal sucursal = new Sucursal();
         sucursal.setId(sucursalId);

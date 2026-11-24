@@ -30,7 +30,9 @@ public final class CatalogoPedidos {
     public static final String MESA_OCUPADA = "OCUPADA";
 
     public static final String PAGO_PENDIENTE = "PENDIENTE";
+    public static final String PAGO_PARCIAL = "PARCIAL";
     public static final String PAGO_PAGADO = "PAGADO";
+    public static final String PAGO_CANCELADO = "CANCELADO";
 
     public static final String METODO_CONTRA_ENTREGA = "CONTRA_ENTREGA";
     public static final String METODO_EFECTIVO = "EFECTIVO";
