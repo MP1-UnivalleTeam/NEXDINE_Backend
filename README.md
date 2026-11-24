@@ -11,6 +11,7 @@ El proyecto contiene únicamente la lógica del servidor, API REST, acceso a dat
 - Spring Web
 - Spring Data JPA
 - PostgreSQL / Supabase
+- Stripe Java SDK 34.2.0
 - Cloudinary Java SDK 2.5.0
 - Lombok
 
@@ -66,6 +67,9 @@ Variables principales:
 | `CLOUDINARY_CLOUD_NAME` | Nombre del cloud de Cloudinary |
 | `CLOUDINARY_API_KEY` | Clave pública de Cloudinary |
 | `CLOUDINARY_API_SECRET` | Secreto de Cloudinary (nunca se expone) |
+| `STRIPE_ENABLED` | Habilita Stripe (`true`/`false`; por defecto `false`) |
+| `STRIPE_SECRET_KEY` | Clave secreta Stripe; usar `sk_test_...` en pruebas |
+| `STRIPE_WEBHOOK_SECRET` | Secreto de firma del endpoint webhook (`whsec_...`) |
 
 Opcionales:
 
@@ -74,6 +78,9 @@ Opcionales:
 | `CLOUDINARY_FOLDER` | `nexdine/productos` | Carpeta destino de las imágenes |
 | `APP_IMAGEN_MAX_BYTES` | `5242880` | Tamaño máximo de imagen (5 MB) |
 | `APP_PEDIDOS_TASA_IMPUESTO` | `0` | Tasa porcentual de impuestos aplicada al subtotal después del descuento (0–100) |
+| `STRIPE_CURRENCY` | `cop` | Moneda del cobro en Stripe |
+| `STRIPE_TEST_MODE` | `true` | Rechaza claves y webhooks del modo contrario |
+| `STRIPE_DEPOSIT_PERCENT` | `30` | Porcentaje de anticipo para pedidos a domicilio (1–100) |
 
 Si faltan las variables de Cloudinary, la aplicación **arranca con normalidad**:
 la subida de imágenes por archivo responde `503` con un mensaje que indica el
@@ -182,6 +189,7 @@ La migración de base de datos está en `archivos IA/migracion_sku_duplicados.sq
 | Método | Ruta | Descripción |
 |---|---|---|
 | POST | `/login` | Autentica un usuario y crea la sesión |
+| POST | `/api/auth/register` | Registra públicamente una cuenta de cliente e inicia sesión |
 | GET | `/logout` | Cierra la sesión actual |
 | GET | `/api/auth/check` | Comprueba si existe una sesión activa |
 | GET | `/api/auth/me` | Obtiene el usuario autenticado |
@@ -220,6 +228,7 @@ incluye `subtotal`, `descuento`, `impuestos`, `tasaImpuesto`, `propina`,
 | GET | `/api/clientes/favoritos` | Cliente autenticado | Lista productos favoritos del perfil |
 | POST | `/api/clientes/favoritos/{productoId}` | Cliente autenticado | Guarda un producto disponible como favorito |
 | DELETE | `/api/clientes/favoritos/{productoId}` | Cliente autenticado | Quita un favorito |
+| GET | `/api/clientes/menus` | Cliente autenticado | Devuelve los restaurantes activos con su slug y ruta pública de menú |
 | GET | `/mesas` | Administrador, superadmin o mesero | Lista mesas disponibles para elegir |
 | POST | `/api/pedidos/manual` | Personal autenticado | Registra un pedido para una mesa y sus productos |
 | POST | `/api/pedidos/invitado?sucursalId={uuid}` | Público | Asocia un pedido en línea a la sucursal elegida (parámetro opcional) |
@@ -236,6 +245,14 @@ incluye `subtotal`, `descuento`, `impuestos`, `tasaImpuesto`, `propina`,
 | PUT | `/api/cupones/admin/{id}` | Administrador o superadministrador | Edita propiedades del cupón |
 | PATCH | `/api/cupones/admin/{id}/estado?activo={boolean}` | Administrador o superadministrador | Activa o desactiva un cupón |
 | DELETE | `/api/cupones/admin/{id}` | Administrador o superadministrador | Elimina únicamente si no tiene usos ni pedidos relacionados |
+| PUT | `/api/pedidos/{pedidoId}/pago/metodo?metodo=EFECTIVO` | Propietario invitado o personal autorizado | Selecciona efectivo, tarjeta, contra entrega, transferencia o pago en línea |
+| PUT | `/api/pedidos/{pedidoId}/pago/efectivo?montoRecibido=100000` | Propietario invitado o personal autorizado | Registra monto recibido y calcula cambio |
+| POST | `/api/pedidos/{pedidoId}/pago/stripe?anticipo=false` | Propietario invitado o personal autorizado | Crea/reutiliza un PaymentIntent y devuelve `clientSecret` |
+| DELETE | `/api/pedidos/{pedidoId}/pago` | Propietario invitado o personal autorizado | Cancela el PaymentIntent pendiente sin cancelar el pedido |
+| POST | `/api/stripe/webhook` | Stripe (firma obligatoria) | Confirma el pago y actualiza su estado de forma idempotente |
+| POST | `/api/pedidos/{pedidoId}/pago/en-linea?monto=50000&referencia=REF123&anticipo=true` | Propietario invitado o personal autorizado | Registra una referencia externa; no valida un cobro real |
+| POST | `/api/pedidos/{pedidoId}/pago/confirmar` | Mesero, administrador o superadministrador | Confirma el pago y genera la notificación |
+| GET | `/api/pedidos/{pedidoId}/pago` | Propietario invitado o personal autorizado | Consulta método, estado, monto recibido y cambio |
 
 Las observaciones de línea se almacenan en `items_pedido.observaciones` como
 texto plano; se normalizan y validan en el servidor. El identificador de pedido
@@ -247,6 +264,50 @@ Los cupones con historial no se borran físicamente: la API responde `409` y se
 deben desactivar para conservar su referencia en pedidos anteriores. La tabla
 `cupones` y sus campos de vigencia/uso ya están definidos en la migración V3;
 no se requiere una migración nueva para estas operaciones.
+
+### Registro público de clientes y pagos
+
+`POST /api/auth/register` acepta JSON:
+
+```json
+{
+  "nombre": "cliente1",
+  "contrasena": "secreto1",
+  "celular": "3001234567",
+  "direccion": "Calle 1",
+  "correo": "cliente@example.com"
+}
+```
+
+El registro crea una cuenta `CLIENTE`, inicia la sesión y rechaza nombres
+duplicados o contraseñas menores de 6 caracteres.
+
+### Pagos con tarjeta Stripe
+
+Stripe permanece deshabilitado por defecto, por lo que la aplicación puede
+iniciarse sin credenciales Stripe. Para pruebas configura `STRIPE_ENABLED=true`,
+una clave secreta `sk_test_...`, `STRIPE_TEST_MODE=true` y el secreto de webhook
+que genera Stripe CLI. El backend calcula el importe y crea un PaymentIntent
+exclusivamente para tarjeta; no acepta un importe indicado por el cliente. El
+anticipo opcional solo aplica a pedidos a domicilio y usa
+`STRIPE_DEPOSIT_PERCENT`.
+
+El endpoint de creación devuelve el `clientSecret` para que una interfaz
+integrada con Stripe.js capture y confirme la tarjeta. El backend no recibe ni
+almacena números de tarjeta. El pedido solo queda `PAGADO` al recibir
+`payment_intent.succeeded` con firma válida; los eventos repetidos no duplican
+el monto ni las notificaciones.
+
+Para desarrollo local, ejecuta Stripe CLI y configura `STRIPE_WEBHOOK_SECRET`
+con el secreto `whsec_...` mostrado por el comando:
+
+```powershell
+stripe listen --forward-to localhost:8080/api/stripe/webhook
+```
+
+Tarjeta de prueba Stripe: `4242 4242 4242 4242`, fecha futura y cualquier CVC
+de tres dígitos. Los errores de configuración responden `503`, los errores
+de validación `400` y los fallos de comunicación con Stripe `502`.
 
 El cuerpo de `POST /api/pedidos/manual` usa el formato:
 

@@ -1,11 +1,14 @@
 package com.restaurant.app.services;
 
 import com.restaurant.app.model.Mesa;
+import com.restaurant.app.model.Pedido;
 import com.restaurant.app.model.Sucursal;
 import com.restaurant.app.model.Usuario;
 import com.restaurant.app.repository.MesaRepository;
+import com.restaurant.app.repository.PedidoRepository;
 import com.restaurant.app.repository.RestauranteRepository;
 import com.restaurant.app.repository.SucursalRepository;
+import com.restaurant.app.util.CatalogoPedidos;
 
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
@@ -28,15 +31,18 @@ public class MesaService {
     private final SucursalRepository sucursalRepository;
     private final RestauranteRepository restauranteRepository;
     private final UsuarioContextService usuarioContextService;
+    private final PedidoRepository pedidoRepository;
 
     public MesaService(MesaRepository mesaRepository,
                        SucursalRepository sucursalRepository,
                        RestauranteRepository restauranteRepository,
-                       UsuarioContextService usuarioContextService) {
+                       UsuarioContextService usuarioContextService,
+                       PedidoRepository pedidoRepository) {
         this.mesaRepository = mesaRepository;
         this.sucursalRepository = sucursalRepository;
         this.restauranteRepository = restauranteRepository;
         this.usuarioContextService = usuarioContextService;
+        this.pedidoRepository = pedidoRepository;
     }
 
     public List<Mesa> listarMesas(Usuario usuario, UUID sucursalIdSolicitada) {
@@ -118,10 +124,58 @@ public class MesaService {
 
     @Transactional
     public Mesa cambiarEstadoMesa(Usuario usuario, @NonNull UUID mesaId, boolean activa) {
-        UsuarioContextService.UsuarioContext contexto = usuarioContextService.obtenerContexto(usuario);
-
         Mesa mesa = mesaRepository.findById(mesaId)
                 .orElseThrow(() -> new IllegalArgumentException("La mesa no existe."));
+        validarAccesoMesa(usuario, mesa);
+        mesa.setActiva(activa);
+        return mesaRepository.save(mesa);
+    }
+
+    public Mesa obtenerMesa(Usuario usuario, @NonNull UUID mesaId) {
+        Mesa mesa = mesaRepository.findById(mesaId)
+                .orElseThrow(() -> new IllegalArgumentException("La mesa no existe."));
+        validarAccesoMesa(usuario, mesa);
+        return mesa;
+    }
+
+    @Transactional
+    public void ocuparMesa(@NonNull UUID mesaId) {
+        Mesa mesa = mesaRepository.findByIdForUpdate(mesaId).orElse(null);
+        if (mesa == null || !mesa.isActiva()) {
+            return;
+        }
+        if (!CatalogoPedidos.MESA_OCUPADA.equals(mesa.getEstado())) {
+            mesa.setEstado(CatalogoPedidos.MESA_OCUPADA);
+            mesaRepository.save(mesa);
+        }
+    }
+
+    @Transactional
+    public boolean liberarMesaSiCorresponde(@NonNull UUID mesaId) {
+        Mesa mesa = mesaRepository.findByIdForUpdate(mesaId).orElse(null);
+        if (mesa == null) {
+            return false;
+        }
+        boolean tienePendientes = pedidoRepository.findByMesaId(mesaId).stream()
+                .anyMatch(this::esPendienteDeMesa);
+        if (tienePendientes) {
+            return false;
+        }
+        mesa.setEstado(CatalogoPedidos.MESA_LIBRE);
+        mesaRepository.save(mesa);
+        return true;
+    }
+
+    private boolean esPendienteDeMesa(Pedido pedido) {
+        if (!CatalogoPedidos.ESTADOS_FINALES.contains(pedido.getEstado())) {
+            return true;
+        }
+        return !"CANCELADO".equals(pedido.getEstado())
+                && !CatalogoPedidos.PAGO_PAGADO.equals(pedido.getPagoEstado());
+    }
+
+    private void validarAccesoMesa(Usuario usuario, Mesa mesa) {
+        UsuarioContextService.UsuarioContext contexto = usuarioContextService.obtenerContexto(usuario);
 
         if (contexto.getSucursalId() != null
                 && !mesa.getSucursalId().equals(contexto.getSucursalId())) {
@@ -136,9 +190,6 @@ public class MesaService {
                 throw new IllegalStateException("No tiene permisos sobre esta mesa.");
             }
         }
-
-        mesa.setActiva(activa);
-        return mesaRepository.save(mesa);
     }
 
     public Optional<Mesa> buscarPorCodigoActiva(String codigo) {

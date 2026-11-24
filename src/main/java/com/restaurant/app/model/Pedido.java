@@ -43,6 +43,9 @@ public class Pedido extends EntidadUuid {
     @Column(precision = 10, scale = 2)
     private BigDecimal descuento = BigDecimal.ZERO;
 
+    @Column(name = "base_gravable", precision = 10, scale = 2)
+    private BigDecimal baseGravable = BigDecimal.ZERO;
+
     @Column(precision = 10, scale = 2)
     private BigDecimal cargos = BigDecimal.ZERO;
 
@@ -84,6 +87,18 @@ public class Pedido extends EntidadUuid {
 
     @Column(name = "pago_estado", length = 20)
     private String pagoEstado;
+
+    @Column(name = "pago_referencia", length = 100)
+    private String pagoReferencia;
+
+    @Column(name = "pago_anticipo", nullable = false)
+    private boolean pagoAnticipo = false;
+
+    @Column(name = "pago_fecha_actualizacion")
+    private LocalDateTime pagoFechaActualizacion;
+
+    @Column(name = "fecha_vencimiento")
+    private LocalDateTime fechaVencimiento;
 
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;

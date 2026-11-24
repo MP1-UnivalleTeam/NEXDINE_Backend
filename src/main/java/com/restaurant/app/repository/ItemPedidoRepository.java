@@ -2,9 +2,13 @@ package com.restaurant.app.repository;
 
 import com.restaurant.app.model.ItemPedido;
 import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 public interface ItemPedidoRepository extends JpaRepository<ItemPedido, UUID> {
     List<ItemPedido> findByPedidoId(UUID pedidoId);
+
+    List<ItemPedido> findByPedidoIdIn(Collection<UUID> pedidoIds);
 }

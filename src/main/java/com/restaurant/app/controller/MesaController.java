@@ -55,6 +55,32 @@ public class MesaController {
         }
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<?> obtenerMesa(@PathVariable UUID id, HttpSession session) {
+        Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
+
+        if (usuarioActual == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        if (!"ADMINISTRADOR".equals(usuarioActual.getRol())
+                && !"SUPERADMIN".equals(usuarioActual.getRol())
+                && !"MESERO".equals(usuarioActual.getRol())) {
+            return ResponseEntity.status(403).build();
+        }
+
+        try {
+            return ResponseEntity.ok(mesaService.obtenerMesa(usuarioActual, id));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(Map.of("error", "Error al obtener la mesa: " + e.getMessage()));
+        }
+    }
+
     @GetMapping("/sucursales")
     public ResponseEntity<?> listarSucursales(HttpSession session) {
         Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");

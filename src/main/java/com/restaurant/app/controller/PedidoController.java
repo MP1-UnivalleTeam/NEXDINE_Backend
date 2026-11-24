@@ -4,34 +4,44 @@ import com.restaurant.app.dto.PedidoManualRequest;
 import com.restaurant.app.model.ItemPedido;
 import com.restaurant.app.model.Pedido;
 import com.restaurant.app.model.Usuario;
+import com.restaurant.app.services.PagoService;
 import com.restaurant.app.services.PedidoEventosService;
 import com.restaurant.app.services.PedidoService;
+import com.restaurant.app.services.StripePaymentService;
+import com.restaurant.app.util.PedidosSesionHttp;
+import com.stripe.exception.StripeException;
 import jakarta.servlet.http.HttpSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/pedidos")
 public class PedidoController {
 
-    private static final String PEDIDOS_INVITADO_SESSION = "pedidosInvitado";
-    private static final int MAX_PEDIDOS_INVITADO_SESSION = 50;
+    private static final Logger logger = LoggerFactory.getLogger(PedidoController.class);
 
     private final PedidoService pedidoService;
+    private final PagoService pagoService;
     private final PedidoEventosService eventosService;
+    private final StripePaymentService stripePaymentService;
 
-    public PedidoController(PedidoService pedidoService, PedidoEventosService eventosService) {
+    public PedidoController(PedidoService pedidoService,
+                            PagoService pagoService,
+                            PedidoEventosService eventosService,
+                            StripePaymentService stripePaymentService) {
         this.pedidoService = pedidoService;
+        this.pagoService = pagoService;
         this.eventosService = eventosService;
+        this.stripePaymentService = stripePaymentService;
     }
 
     @PostMapping("/manual")
@@ -157,7 +167,7 @@ public class PedidoController {
         try {
             Pedido pedido = pedidoService.crearPedidoInvitado(nombre.trim(), telefono.trim(),
                     tipoServicio, direccion, referencia, sucursalId);
-            registrarPedidoInvitado(session, pedido.getId());
+            PedidosSesionHttp.registrar(session, pedido.getId());
             return ResponseEntity.ok(Map.of(
                     "id", pedido.getId(),
                     "numeroSeguimiento", pedido.getNumeroSeguimiento(),
@@ -179,7 +189,7 @@ public class PedidoController {
             @RequestParam(required = false) String observaciones,
             HttpSession session) {
 
-        if (!esPedidoDeSesion(pedidoId, session)) {
+        if (!PedidosSesionHttp.esPropietario(session, pedidoId)) {
             return ResponseEntity.notFound().build();
         }
         if (cantidad < 1) {
@@ -203,7 +213,7 @@ public class PedidoController {
     @GetMapping("/{pedidoId}/resumen")
     public ResponseEntity<?> obtenerResumen(@PathVariable UUID pedidoId, HttpSession session) {
         Usuario usuario = usuarioActual(session);
-        boolean esInvitadoPropietario = esPedidoDeSesion(pedidoId, session);
+        boolean esInvitadoPropietario = PedidosSesionHttp.esPropietario(session, pedidoId);
         if (!esInvitadoPropietario && (usuario == null || !esPersonal(usuario))) {
             return ResponseEntity.notFound().build();
         }
@@ -230,7 +240,7 @@ public class PedidoController {
             @RequestParam(required = false) String cuponCodigo,
             HttpSession session) {
 
-        if (!esPedidoDeSesion(pedidoId, session)) {
+        if (!PedidosSesionHttp.esPropietario(session, pedidoId)) {
             return ResponseEntity.notFound().build();
         }
         try {
@@ -241,6 +251,167 @@ public class PedidoController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", "No fue posible confirmar el pedido"));
+        }
+    }
+
+    @PutMapping("/{pedidoId}/pago/metodo")
+    public ResponseEntity<?> seleccionarMetodoPago(@PathVariable UUID pedidoId,
+                                                   @RequestParam String metodo,
+                                                   HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (!puedeAccederPago(usuario, pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            pagoService.solicitarMetodoPago(usuario, pedidoId, metodo);
+            return ResponseEntity.ok(pagoService.obtenerPago(usuario, pedidoId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{pedidoId}/pago/efectivo")
+    public ResponseEntity<?> registrarMontoEfectivo(@PathVariable UUID pedidoId,
+                                                   @RequestParam BigDecimal montoRecibido,
+                                                   HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (!puedeAccederPago(usuario, pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            pagoService.registrarMontoEfectivo(usuario, pedidoId, montoRecibido);
+            return ResponseEntity.ok(pagoService.obtenerPago(usuario, pedidoId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{pedidoId}/pago/confirmar")
+    public ResponseEntity<?> confirmarPago(@PathVariable UUID pedidoId, HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (usuario == null) {
+            return ResponseEntity.status(401).build();
+        }
+        if (!esMeseroOAdmin(usuario)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "No tiene permisos para confirmar pagos."));
+        }
+        try {
+            Pedido pedido = pagoService.confirmarPago(usuario, pedidoId);
+            return ResponseEntity.ok(pedidoService.obtenerResumen(pedido.getId()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{pedidoId}/pago/en-linea")
+    public ResponseEntity<?> registrarPagoEnLinea(@PathVariable UUID pedidoId,
+                                                  @RequestParam BigDecimal monto,
+                                                  @RequestParam String referencia,
+                                                  @RequestParam(defaultValue = "false") boolean anticipo,
+                                                  HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (!puedeAccederPago(usuario, pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            Pedido pedido = pagoService.registrarPagoEnLinea(
+                    usuario, pedidoId, monto, referencia, anticipo);
+            return ResponseEntity.ok(pagoService.obtenerPago(usuario, pedidoId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{pedidoId}/pago/cancelar")
+    public ResponseEntity<?> cancelarPago(@PathVariable UUID pedidoId, HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (usuario == null) {
+            return ResponseEntity.status(401).build();
+        }
+        if (!esMeseroOAdmin(usuario)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "No tiene permisos para cancelar pagos."));
+        }
+        try {
+            Pedido pedido = pagoService.cancelarPago(usuario, pedidoId);
+            return ResponseEntity.ok(pedidoService.obtenerResumen(pedido.getId()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{pedidoId}/pago/stripe")
+    public ResponseEntity<?> crearPagoStripe(
+            @PathVariable UUID pedidoId,
+            @RequestParam(defaultValue = "false") boolean anticipo,
+            HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (!puedeAccederPago(usuario, pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return ResponseEntity.ok(stripePaymentService.crearPaymentIntent(
+                    usuario, pedidoId, anticipo));
+        } catch (StripePaymentService.StripeNoConfiguradoException e) {
+            return ResponseEntity.status(503).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        } catch (StripeException e) {
+            logger.error("Stripe rechazó la creación del pago. requestId={}", e.getRequestId());
+            return ResponseEntity.status(502)
+                    .body(Map.of("error", "Stripe no pudo iniciar el pago. Inténtalo nuevamente."));
+        }
+    }
+
+    @DeleteMapping({"/{pedidoId}/pago", "/{pedidoId}/pago/stripe"})
+    public ResponseEntity<?> cancelarPagoStripe(
+            @PathVariable UUID pedidoId,
+            HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (!puedeAccederPago(usuario, pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return ResponseEntity.ok(
+                    stripePaymentService.cancelarPaymentIntent(usuario, pedidoId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        } catch (StripePaymentService.StripeNoConfiguradoException e) {
+            return ResponseEntity.status(503).body(Map.of("error", e.getMessage()));
+        } catch (StripeException e) {
+            logger.error("Stripe rechazó la cancelación del pago. requestId={}", e.getRequestId());
+            return ResponseEntity.status(502)
+                    .body(Map.of("error", "Stripe no pudo cancelar el pago. Inténtalo nuevamente."));
+        }
+    }
+
+    @GetMapping("/{pedidoId}/pago")
+    public ResponseEntity<?> obtenerPago(@PathVariable UUID pedidoId, HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (!puedeAccederPago(usuario, pedidoId, session)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return ResponseEntity.ok(pagoService.obtenerPago(usuario, pedidoId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -260,24 +431,8 @@ public class PedidoController {
                 && List.of("MESERO", "ADMINISTRADOR", "SUPERADMIN").contains(usuario.getRol());
     }
 
-    private void registrarPedidoInvitado(HttpSession session, UUID pedidoId) {
-        Object pedidos = session.getAttribute(PEDIDOS_INVITADO_SESSION);
-        Set<UUID> ids = new LinkedHashSet<>();
-        if (pedidos instanceof Set<?> existentes) {
-            existentes.stream()
-                    .filter(UUID.class::isInstance)
-                    .map(UUID.class::cast)
-                    .forEach(ids::add);
-        }
-        ids.add(pedidoId);
-        while (ids.size() > MAX_PEDIDOS_INVITADO_SESSION) {
-            ids.remove(ids.iterator().next());
-        }
-        session.setAttribute(PEDIDOS_INVITADO_SESSION, ids);
-    }
-
-    private boolean esPedidoDeSesion(UUID pedidoId, HttpSession session) {
-        Object pedidos = session.getAttribute(PEDIDOS_INVITADO_SESSION);
-        return pedidos instanceof Set<?> ids && ids.contains(pedidoId);
+    private boolean puedeAccederPago(Usuario usuario, UUID pedidoId, HttpSession session) {
+        return (usuario != null && esPersonal(usuario))
+                || PedidosSesionHttp.esPropietario(session, pedidoId);
     }
 }
