@@ -71,28 +71,9 @@ public class ApiController {
         return ResponseEntity.status(401).build();
     }
 
-    @GetMapping("/users")
-    public ResponseEntity<List<Usuario>> getAllUsers(HttpSession session) {
-        Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
-        if (usuarioActual == null) {
-            return ResponseEntity.status(401).build();
-        }
-        return ResponseEntity.ok(userService.getAllUsers());
-    }
-
-    @GetMapping("/users/search")
-    public ResponseEntity<?> searchUser(@RequestParam @NonNull UUID id, HttpSession session) {
-        Usuario usuarioActual = (Usuario) session.getAttribute("currentUser");
-        if (usuarioActual == null) {
-            return ResponseEntity.status(401).build();
-        }
-        Optional<Usuario> usuario = userService.getUserById(id);
-        if (usuario.isPresent()) {
-            Usuario encontrado = usuario.get();
-            return ResponseEntity.ok(encontrado);
-        }
-        return ResponseEntity.notFound().build();
-    }
+    // Los endpoints GET /api/users y /api/users/search se eliminaron: exponían
+    // todos los usuarios a cualquier sesión. La gestión de usuarios vive en
+    // /users (UserController), que valida rol y restaurante.
 
     @GetMapping("/menu")
     public ResponseEntity<?> verMenu(@RequestParam String mesa) {

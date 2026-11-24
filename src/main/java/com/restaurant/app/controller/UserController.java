@@ -108,9 +108,16 @@ public class UserController {
             return noAutorizado();
         }
 
-        return userService.getUserById(id)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        Optional<Usuario> objetivo = userService.getUserById(id);
+        if (objetivo.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            usuarioContextService.exigirUsuarioEnContexto(usuarioActual, objetivo.get());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
+        return ResponseEntity.ok(objetivo.get());
     }
 
     @GetMapping("/sucursales")

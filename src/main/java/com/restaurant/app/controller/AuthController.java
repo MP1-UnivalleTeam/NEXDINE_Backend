@@ -28,8 +28,6 @@ public class AuthController {
             @RequestParam String contraseña,
             HttpSession session) {
 
-        userService.initAdmin();
-
         Optional<Usuario> usuarioOpt = userService.login(nombre, contraseña);
 
         if (usuarioOpt.isEmpty()) {

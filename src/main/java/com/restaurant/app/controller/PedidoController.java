@@ -316,9 +316,16 @@ public class PedidoController {
                                                   @RequestParam String referencia,
                                                   @RequestParam(defaultValue = "false") boolean anticipo,
                                                   HttpSession session) {
+        // Solo el personal puede registrar un pago en línea: el monto y la
+        // referencia no se verifican contra una pasarela, así que un invitado
+        // podría marcar su pedido como pagado sin pagar.
         Usuario usuario = usuarioActual(session);
-        if (!puedeAccederPago(usuario, pedidoId, session)) {
-            return ResponseEntity.notFound().build();
+        if (usuario == null) {
+            return ResponseEntity.status(401).build();
+        }
+        if (!esMeseroOAdmin(usuario)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "Solo el personal autorizado puede registrar pagos en línea."));
         }
         try {
             Pedido pedido = pagoService.registrarPagoEnLinea(

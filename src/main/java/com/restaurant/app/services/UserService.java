@@ -6,6 +6,11 @@ import com.restaurant.app.repository.EmpleadoSucursalRepository;
 import com.restaurant.app.repository.UserRepository;
 
 import org.springframework.lang.NonNull;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -27,18 +32,36 @@ public UserService(UserRepository userRepository,
     this.empleadoSucursalRepository = empleadoSucursalRepository;
 }
 
-public void initAdmin() {
+private static final PasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
 
-    if (!userRepository.findByNombre("jesus").isPresent()) {
+public static String cifrarContrasena(String contrasenaPlana) {
+    return PASSWORD_ENCODER.encode(contrasenaPlana);
+}
 
-        Administrador admin = new Administrador();
+private static boolean esHashBcrypt(String valor) {
+    return valor != null && valor.matches("^\\$2[aby]?\\$\\d{2}\\$.{53}$");
+}
 
-        admin.setNombre("jesus");
-        admin.setContraseña("1234");
-        admin.setRol("ADMINISTRADOR");
-        admin.setEstado(true);
-        userRepository.save(admin);
+/**
+ * Verifica la contraseña. Las cuentas antiguas guardadas en texto plano se
+ * aceptan una última vez y se migran a BCrypt en ese mismo inicio de sesión.
+ */
+private boolean verificarYMigrar(Usuario usuario, String contrasenaPlana) {
+    String guardada = usuario.getContraseña();
+    if (guardada == null || contrasenaPlana == null) {
+        return false;
     }
+    if (esHashBcrypt(guardada)) {
+        return PASSWORD_ENCODER.matches(contrasenaPlana, guardada);
+    }
+    boolean coincide = MessageDigest.isEqual(
+            guardada.getBytes(StandardCharsets.UTF_8),
+            contrasenaPlana.getBytes(StandardCharsets.UTF_8));
+    if (coincide) {
+        usuario.setContraseña(cifrarContrasena(contrasenaPlana));
+        userRepository.save(usuario);
+    }
+    return coincide;
 }
 
 public Optional<Usuario> login(String nombre,
@@ -51,7 +74,7 @@ public Optional<Usuario> login(String nombre,
 
         Usuario usuario = usuarioOpt.get();
 
-        if (usuario.getContraseña().equals(contraseña)) {
+        if (verificarYMigrar(usuario, contraseña)) {
 
             if (!usuario.isEstado()) {
                 return Optional.of(new SuspendedMarker());
@@ -101,7 +124,7 @@ public Usuario createUser(String nombre,
     }
 
     nuevoUsuario.setNombre(nombre);
-    nuevoUsuario.setContraseña(contraseña);
+    nuevoUsuario.setContraseña(cifrarContrasena(contraseña));
     nuevoUsuario.setRol(rol);
     nuevoUsuario.setCelular(celular);
     nuevoUsuario.setDireccion(direccion);

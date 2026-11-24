@@ -1,5 +1,6 @@
 package com.restaurant.app.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import jakarta.persistence.Transient;
 import lombok.Data;
@@ -20,6 +21,8 @@ public abstract class Usuario extends EntidadUuid {
     private String direccion;
     private String rol;
 
+    // Nunca se envía en las respuestas JSON (se guarda como hash BCrypt).
+    @JsonIgnore
     private String contraseña;
 
     private boolean estado = true;
