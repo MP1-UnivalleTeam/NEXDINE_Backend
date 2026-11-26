@@ -6,6 +6,8 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Data;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
@@ -52,6 +54,7 @@ public class Recordatorio extends EntidadUuid {
     private String diasSemana;
 
     @Column(name = "dia_mes")
+    @JdbcTypeCode(SqlTypes.SMALLINT)
     private Integer diaMes;
 
     /** Canales separados por coma: APP, CORREO. */

@@ -335,6 +335,23 @@ class Sprint4y5IntegracionTest {
         assertEquals(LocalDateTime.of(2026, 11, 22, 9, 0), ocurrencia);
     }
 
+    /**
+     * En Supabase (migración V11) dia_semana y dia_mes son SMALLINT. Con
+     * HIBERNATE_DDL_AUTO=validate el backend no arranca si la entidad las
+     * mapea como INTEGER, así que el tipo se comprueba aquí.
+     */
+    @Test
+    void columnasSmallintCoincidenConLaMigracion() {
+        for (String[] columna : new String[][]{{"horarios_sucursal", "dia_semana"}, {"recordatorios", "dia_mes"}}) {
+            String tipo = jdbc.queryForObject(
+                    "SELECT data_type FROM information_schema.columns WHERE lower(table_name) = ? AND lower(column_name) = ?",
+                    String.class, columna[0], columna[1]);
+            assertEquals("SMALLINT", tipo.toUpperCase(), columna[0] + "." + columna[1]);
+        }
+    }
+
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
     @SuppressWarnings("unused")
     private List<ItemPedido> itemsDe(UUID pedidoId) {
         return items.findByPedidoId(pedidoId);

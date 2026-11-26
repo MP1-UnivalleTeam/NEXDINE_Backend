@@ -6,6 +6,8 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Data;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
@@ -26,6 +28,7 @@ public class HorarioSucursal extends EntidadUuid {
 
     /** 1 = lunes … 7 = domingo (ISO-8601, igual que java.time.DayOfWeek). */
     @Column(name = "dia_semana", nullable = false)
+    @JdbcTypeCode(SqlTypes.SMALLINT)
     private int diaSemana;
 
     @Column(name = "hora_apertura", nullable = false)
