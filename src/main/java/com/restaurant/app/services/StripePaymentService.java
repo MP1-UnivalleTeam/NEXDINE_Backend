@@ -335,6 +335,29 @@ public class StripePaymentService {
         return respuesta;
     }
 
+    /**
+     * RF032: reembolsa a la tarjeta el monto indicado de un pago de Stripe ya
+     * cobrado. Devuelve el identificador del reembolso en Stripe.
+     */
+    public String reembolsarATarjeta(UUID pedidoId, BigDecimal monto) throws StripeException {
+        PagoStripe pago = pagoStripeRepository
+                .findByPedidoIdAndEstadoInOrderByFechaCreacionDesc(pedidoId, List.of("PAGADO"))
+                .stream()
+                .filter(p -> p.getImporte() != null && p.getImporte().compareTo(monto) >= 0)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "El pedido no tiene un pago con tarjeta por ese monto para reembolsar."));
+        com.stripe.param.RefundCreateParams params = com.stripe.param.RefundCreateParams.builder()
+                .setPaymentIntent(pago.getPaymentIntentId())
+                .setAmount(convertirAMinorUnits(monto))
+                .build();
+        RequestOptions opciones = RequestOptions.builder()
+                .setIdempotencyKey("reembolso-" + pedidoId + "-" + convertirAMinorUnits(monto)
+                        + "-" + pago.getPaymentIntentId())
+                .build();
+        return clienteStripe().refunds().create(params, opciones).getId();
+    }
+
     private StripeClient clienteStripe() {
         StripeClient stripe = stripeClientProvider.getIfAvailable();
         if (stripe == null) {

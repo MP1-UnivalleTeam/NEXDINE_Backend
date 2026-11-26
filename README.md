@@ -363,3 +363,33 @@ NEXDINE_Backend/
 ```
 
 No se incluyen plantillas HTML, Thymeleaf ni archivos del frontend en este repositorio.
+
+## Prueba local (sin Supabase)
+
+Para ver el sistema funcionando en tu equipo sin tocar la base de datos real:
+
+1. Requisitos: JDK 21 (`winget install Microsoft.OpenJDK.21`) y Node.js.
+2. Doble clic en `iniciar-local.cmd` (en la carpeta que contiene `NEXDINE_Backend` y `NEXDINE_Frontend`).
+3. Se abre http://localhost:5173 con estos usuarios de prueba:
+
+| Usuario | Contraseña | Rol |
+|---|---|---|
+| superadmin | super123 | Administrador general |
+| admin | admin123 | Administrador de sede |
+| mesero | mesero123 | Mesero |
+| cocina | cocina123 | Cocina |
+| cliente | cliente123 | Cliente |
+
+Cómo funciona: el backend arranca con el perfil `local`
+(`src/main/resources/application-local.properties`), que usa una base de
+datos H2 en memoria cargada con `db/local/semilla-local.sql`. Los datos se
+borran al cerrar el backend. Render, Vercel y Supabase no se ven afectados
+porque ninguno activa ese perfil.
+
+Manualmente, sin el script:
+
+```
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local -Dspring-boot.run.useTestClasspath=true
+```
+
+y en `NEXDINE_Frontend`: `npm run dev`.

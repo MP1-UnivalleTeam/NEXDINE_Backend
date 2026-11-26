@@ -103,6 +103,7 @@ public class PedidoController {
     @PutMapping("/{pedidoId}/estado")
     public ResponseEntity<?> actualizarEstado(@PathVariable UUID pedidoId,
                                               @RequestParam String estado,
+                                              @RequestParam(required = false) String motivo,
                                               HttpSession session) {
         Usuario usuario = usuarioActual(session);
         if (usuario == null) {
@@ -112,13 +113,54 @@ public class PedidoController {
             return ResponseEntity.status(403).body(Map.of("error", "No tiene permisos para actualizar pedidos."));
         }
         try {
-            Pedido pedido = pedidoService.actualizarEstado(usuario, pedidoId, estado);
+            Pedido pedido = pedidoService.actualizarEstado(usuario, pedidoId, estado, motivo);
             return ResponseEntity.ok(pedidoService.obtenerResumen(pedido.getId()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * RF009 + RF033: cancela un pedido que todavía no pasó a preparación.
+     * Lo puede hacer el personal de la sucursal o el propio cliente, y siempre
+     * exige un motivo.
+     */
+    @PostMapping("/{pedidoId}/cancelar")
+    public ResponseEntity<?> cancelarPedido(@PathVariable UUID pedidoId,
+                                            @RequestParam(required = false) String motivo,
+                                            HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        try {
+            Pedido pedido;
+            if (usuario != null && esPersonal(usuario)) {
+                pedido = pedidoService.cancelarPedido(usuario, pedidoId, motivo);
+            } else if (esDuenoDelPedido(usuario, pedidoId, session)) {
+                pedido = pedidoService.cancelarPedidoPropio(pedidoId, motivo);
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.ok(pedidoService.obtenerResumen(pedido.getId()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** RF010: historial de pedidos del cliente que inició sesión. */
+    @GetMapping("/mis-pedidos")
+    public ResponseEntity<?> listarMisPedidos(HttpSession session) {
+        Usuario usuario = usuarioActual(session);
+        if (usuario == null) {
+            return ResponseEntity.status(401).build();
+        }
+        if (!"CLIENTE".equals(usuario.getRol())) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "El historial de pedidos es para clientes."));
+        }
+        return ResponseEntity.ok(pedidoService.listarPedidosCliente(usuario.getId()));
     }
 
     @GetMapping("/activos/eventos")
@@ -149,6 +191,7 @@ public class PedidoController {
             @RequestParam(required = false) String direccion,
             @RequestParam(required = false) String referencia,
             @RequestParam(required = false) UUID sucursalId,
+            @RequestParam(required = false) String correo,
             HttpSession session) {
 
         if (nombre == null || nombre.isBlank()) {
@@ -165,8 +208,19 @@ public class PedidoController {
         }
 
         try {
+            // RF010 / RF016: si es un cliente registrado, el pedido queda en su
+            // historial y los avisos van a su correo salvo que indique otro.
+            Usuario usuario = usuarioActual(session);
+            UUID clienteId = null;
+            String correoAviso = correo;
+            if (usuario != null && "CLIENTE".equals(usuario.getRol())) {
+                clienteId = usuario.getId();
+                if (correoAviso == null || correoAviso.isBlank()) {
+                    correoAviso = usuario.getCorreo();
+                }
+            }
             Pedido pedido = pedidoService.crearPedidoInvitado(nombre.trim(), telefono.trim(),
-                    tipoServicio, direccion, referencia, sucursalId);
+                    tipoServicio, direccion, referencia, sucursalId, null, clienteId, correoAviso);
             PedidosSesionHttp.registrar(session, pedido.getId());
             return ResponseEntity.ok(Map.of(
                     "id", pedido.getId(),
@@ -213,7 +267,7 @@ public class PedidoController {
     @GetMapping("/{pedidoId}/resumen")
     public ResponseEntity<?> obtenerResumen(@PathVariable UUID pedidoId, HttpSession session) {
         Usuario usuario = usuarioActual(session);
-        boolean esInvitadoPropietario = PedidosSesionHttp.esPropietario(session, pedidoId);
+        boolean esInvitadoPropietario = esDuenoDelPedido(usuario, pedidoId, session);
         if (!esInvitadoPropietario && (usuario == null || !esPersonal(usuario))) {
             return ResponseEntity.notFound().build();
         }
@@ -440,6 +494,15 @@ public class PedidoController {
 
     private boolean puedeAccederPago(Usuario usuario, UUID pedidoId, HttpSession session) {
         return (usuario != null && esPersonal(usuario))
-                || PedidosSesionHttp.esPropietario(session, pedidoId);
+                || esDuenoDelPedido(usuario, pedidoId, session);
+    }
+
+    /** El pedido se creó en esta sesión o pertenece al cliente registrado. */
+    private boolean esDuenoDelPedido(Usuario usuario, UUID pedidoId, HttpSession session) {
+        if (PedidosSesionHttp.esPropietario(session, pedidoId)) {
+            return true;
+        }
+        return usuario != null && "CLIENTE".equals(usuario.getRol())
+                && pedidoService.esPedidoDelCliente(pedidoId, usuario.getId());
     }
 }

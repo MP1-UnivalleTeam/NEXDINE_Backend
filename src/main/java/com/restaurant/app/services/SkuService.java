@@ -3,12 +3,16 @@ package com.restaurant.app.services;
 import com.restaurant.app.model.Restaurante;
 import com.restaurant.app.repository.RestauranteRepository;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,8 +26,24 @@ public class SkuService {
 
     private final RestauranteRepository restauranteRepository;
 
+    // Solo el perfil "local" (base H2 de pruebas) activa este modo: H2 no
+    // entiende el INSERT ... ON CONFLICT ... RETURNING de PostgreSQL.
+    // En Supabase/Render queda en false y se usa la consulta original.
+    private JdbcTemplate jdbcTemplate;
+    private boolean consecutivoPortable;
+
     public SkuService(RestauranteRepository restauranteRepository) {
         this.restauranteRepository = restauranteRepository;
+    }
+
+    @Autowired(required = false)
+    void setJdbcTemplate(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    @Value("${app.sku.consecutivo-portable:false}")
+    void setConsecutivoPortable(boolean consecutivoPortable) {
+        this.consecutivoPortable = consecutivoPortable;
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -42,6 +62,9 @@ public class SkuService {
     }
 
     private long reservarConsecutivo(UUID restauranteId) {
+        if (consecutivoPortable && jdbcTemplate != null) {
+            return reservarConsecutivoPortable(restauranteId);
+        }
         try {
             Long consecutivo = restauranteRepository.siguienteConsecutivoProducto(restauranteId);
 
@@ -57,6 +80,24 @@ public class SkuService {
                     "No fue posible asignar el consecutivo del producto por una restricción "
                             + "de integridad. Verifique la tabla producto_sku_consecutivos.", e);
         }
+    }
+
+    /** Versión SQL estándar del consecutivo, usada solo en la prueba local. */
+    private long reservarConsecutivoPortable(UUID restauranteId) {
+        List<Long> actual = jdbcTemplate.queryForList(
+                "SELECT ultimo_numero FROM producto_sku_consecutivos WHERE restaurante_id = ? FOR UPDATE",
+                Long.class, restauranteId);
+        if (actual.isEmpty()) {
+            jdbcTemplate.update(
+                    "INSERT INTO producto_sku_consecutivos (restaurante_id, ultimo_numero, actualizado_en) "
+                            + "VALUES (?, 1, CURRENT_TIMESTAMP)", restauranteId);
+            return 1;
+        }
+        long siguiente = actual.get(0) + 1;
+        jdbcTemplate.update(
+                "UPDATE producto_sku_consecutivos SET ultimo_numero = ?, actualizado_en = CURRENT_TIMESTAMP "
+                        + "WHERE restaurante_id = ?", siguiente, restauranteId);
+        return siguiente;
     }
 
     private Restaurante obtenerRestaurante(UUID restauranteId) {

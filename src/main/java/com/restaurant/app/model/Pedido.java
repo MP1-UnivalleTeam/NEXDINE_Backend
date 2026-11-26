@@ -103,6 +103,20 @@ public class Pedido extends EntidadUuid {
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;
 
+    /** Cliente registrado que hizo el pedido (null para invitados y pedidos del personal). */
+    @Column(name = "cliente_id")
+    private UUID clienteId;
+
+    /** Correo opcional para avisar al cliente los cambios de estado (RF016). */
+    @Column(name = "correo", length = 150)
+    private String correo;
+
+    @Column(name = "motivo_cancelacion", length = 300)
+    private String motivoCancelacion;
+
+    @Column(name = "fecha_cancelacion")
+    private LocalDateTime fechaCancelacion;
+
     @PrePersist
     void asignarFechaCreacion() {
         if (fechaCreacion == null) {

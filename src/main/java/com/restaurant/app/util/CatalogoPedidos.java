@@ -18,11 +18,18 @@ public final class CatalogoPedidos {
 
     public static final Set<String> ESTADOS_FINALES = Set.of("ENTREGADO", "CANCELADO");
 
+    /** RF009: estados desde los que se permite cancelar. */
+    public static final Set<String> ESTADOS_CANCELABLES = Set.of("PENDIENTE", "CONFIRMADO");
+
+    public static final int MOTIVO_MIN = 5;
+    public static final int MOTIVO_MAX = 300;
+
     public static final Map<String, Set<String>> TRANSICIONES_PEDIDO = Map.of(
             "PENDIENTE", Set.of("CONFIRMADO", "CANCELADO"),
             "CONFIRMADO", Set.of("EN_PREPARACION", "CANCELADO"),
-            "EN_PREPARACION", Set.of("LISTO", "CANCELADO"),
-            "LISTO", Set.of("ENTREGADO", "CANCELADO"),
+            // RF009: un pedido solo se puede cancelar antes de pasar a preparación.
+            "EN_PREPARACION", Set.of("LISTO"),
+            "LISTO", Set.of("ENTREGADO"),
             "ENTREGADO", Set.of(),
             "CANCELADO", Set.of());
 

@@ -9,4 +9,6 @@ public interface UserRepository extends JpaRepository<Usuario, UUID> {
 
     Optional<Usuario> findByNombre(String nombre);
 
+    boolean existsByCorreoIgnoreCaseAndIdNot(String correo, UUID id);
+
 }

@@ -27,6 +27,20 @@ public abstract class Usuario extends EntidadUuid {
 
     private boolean estado = true;
 
+    // RF029: personalización del perfil.
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
+
+    @JsonIgnore
+    @Column(name = "avatar_public_id", length = 255)
+    private String avatarPublicId;
+
+    @Column(name = "color_acento", length = 7)
+    private String colorAcento;
+
+    @Column(name = "tema", length = 10)
+    private String tema;
+
     @Transient
     private UUID sucursalId;
 

@@ -28,6 +28,9 @@ public class HistorialPedido extends EntidadUuid {
     @Column(name = "usuario_nombre", length = 150)
     private String usuarioNombre;
 
+    @Column(name = "motivo", length = 300)
+    private String motivo;
+
     @Column(name = "fecha_cambio", nullable = false)
     private LocalDateTime fechaCambio;
 

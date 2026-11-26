@@ -64,6 +64,18 @@ public class PedidoService {
     private final MesaService mesaService;
     private final ConfiguracionImpuestoService configuracionImpuestoService;
     private final CalculadoraPedidoService calculadoraPedidoService;
+    private HorarioService horarioService;
+    private AvisoEstadoPedidoService avisoEstadoPedidoService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setHorarioService(HorarioService horarioService) {
+        this.horarioService = horarioService;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setAvisoEstadoPedidoService(AvisoEstadoPedidoService avisoEstadoPedidoService) {
+        this.avisoEstadoPedidoService = avisoEstadoPedidoService;
+    }
 
     public PedidoService(PedidoRepository pedidoRepository,
                          ItemPedidoRepository itemPedidoRepository,
@@ -112,6 +124,18 @@ public class PedidoService {
     public Pedido crearPedidoInvitado(String nombre, String telefono, String tipoServicio,
                                       String direccion, String referencia, UUID sucursalId,
                                       UUID mesaId) {
+        return crearPedidoInvitado(nombre, telefono, tipoServicio, direccion, referencia,
+                sucursalId, mesaId, null, null);
+    }
+
+    /**
+     * @param clienteId cliente registrado que hace el pedido (RF010), o null.
+     * @param correo    correo para avisos de estado (RF016), o null.
+     */
+    @Transactional
+    public Pedido crearPedidoInvitado(String nombre, String telefono, String tipoServicio,
+                                      String direccion, String referencia, UUID sucursalId,
+                                      UUID mesaId, UUID clienteId, String correo) {
         if (tipoServicio == null || tipoServicio.isBlank()) {
             throw new IllegalArgumentException("El tipo de servicio es obligatorio.");
         }
@@ -123,6 +147,8 @@ public class PedidoService {
         pedido.setReferencia(referencia);
         pedido.setEstado("PENDIENTE");
         pedido.setPagoEstado(CatalogoPedidos.PAGO_PENDIENTE);
+        pedido.setClienteId(clienteId);
+        pedido.setCorreo(CorreoService.normalizarCorreo(correo));
 
         if (mesaId != null) {
             Mesa mesa = mesaRepository.findById(mesaId)
@@ -134,6 +160,7 @@ public class PedidoService {
                 throw new IllegalArgumentException(
                         "La mesa no pertenece a la sucursal indicada.");
             }
+            exigirSucursalAbierta(mesa.getSucursalId());
             pedido.setMesaId(mesa.getId());
             pedido.setSucursalId(mesa.getSucursalId());
             pedido.setTipoServicio(CatalogoPedidos.TIPO_MESA);
@@ -148,6 +175,7 @@ public class PedidoService {
                     .filter(Sucursal::isActiva)
                     .orElseThrow(() -> new IllegalArgumentException(
                             "La sucursal no existe o está inactiva."));
+            exigirSucursalAbierta(sucursal.getId());
             pedido.setSucursalId(sucursal.getId());
             pedido.setTasaImpuesto(
                     configuracionImpuestoService.obtenerTasaVigente(
@@ -262,6 +290,7 @@ public class PedidoService {
                 .filter(Sucursal::isActiva)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "La sucursal no existe o está inactiva."));
+        exigirSucursalAbierta(sucursal.getId());
 
         Pedido pedido = new Pedido();
         pedido.setNombre(nombre);
@@ -399,6 +428,7 @@ public class PedidoService {
                 .filter(Sucursal::isActiva)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "La sucursal del pedido no existe o está inactiva."));
+        exigirSucursalAbierta(sucursal.getId());
 
         List<ItemPedido> items = itemPedidoRepository.findByPedidoId(pedidoId);
         if (items.isEmpty()) {
@@ -443,6 +473,7 @@ public class PedidoService {
         }
 
         publicarPedido(guardado);
+        avisarCliente(guardado);
         return guardado;
     }
 
@@ -495,6 +526,11 @@ public class PedidoService {
 
     @Transactional
     public Pedido actualizarEstado(Usuario usuario, UUID pedidoId, String estado) {
+        return actualizarEstado(usuario, pedidoId, estado, null);
+    }
+
+    @Transactional
+    public Pedido actualizarEstado(Usuario usuario, UUID pedidoId, String estado, String motivo) {
         exigirPersonal(usuario);
         String nuevoEstado = normalizarEstado(estado);
         if (nuevoEstado == null) {
@@ -502,7 +538,43 @@ public class PedidoService {
         }
 
         Pedido pedido = cargarPedidoEnContexto(usuario, pedidoId);
-        return cambiarEstado(usuario, pedido, nuevoEstado);
+        return cambiarEstado(usuario, pedido, nuevoEstado, motivo);
+    }
+
+    /** RF009 + RF033: el personal cancela un pedido indicando el motivo. */
+    @Transactional
+    public Pedido cancelarPedido(Usuario usuario, UUID pedidoId, String motivo) {
+        if (usuario != null && "COCINERO".equals(usuario.getRol())) {
+            throw new IllegalStateException("El rol de cocina no puede cancelar pedidos.");
+        }
+        exigirPersonal(usuario);
+        Pedido pedido = cargarPedidoEnContexto(usuario, pedidoId);
+        return cambiarEstado(usuario, pedido, CatalogoPedidos.ESTADO_CANCELADO, motivo);
+    }
+
+    /** RF009 + RF033: el cliente (invitado o registrado) cancela su propio pedido. */
+    @Transactional
+    public Pedido cancelarPedidoPropio(UUID pedidoId, String motivo) {
+        Pedido pedido = pedidoRepository.findById(pedidoId)
+                .orElseThrow(() -> new IllegalArgumentException("Pedido no encontrado."));
+        return cambiarEstado(null, pedido, CatalogoPedidos.ESTADO_CANCELADO, motivo);
+    }
+
+    /** RF010: historial de pedidos de un cliente registrado, del más reciente al más antiguo. */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> listarPedidosCliente(UUID clienteId) {
+        if (clienteId == null) {
+            return List.of();
+        }
+        List<Pedido> pedidos = pedidoRepository.findByClienteIdOrderByFechaCreacionDesc(clienteId);
+        return construirResumenes(pedidos);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean esPedidoDelCliente(UUID pedidoId, UUID clienteId) {
+        return clienteId != null && pedidoRepository.findById(pedidoId)
+                .map(pedido -> clienteId.equals(pedido.getClienteId()))
+                .orElse(false);
     }
 
     @Transactional
@@ -523,7 +595,7 @@ public class PedidoService {
                     "La transición de cocina no es válida: "
                             + pedido.getEstado() + " -> " + nuevoEstado);
         }
-        return cambiarEstado(usuario, pedido, nuevoEstado);
+        return cambiarEstado(usuario, pedido, nuevoEstado, null);
     }
 
     @Transactional(readOnly = true)
@@ -541,6 +613,12 @@ public class PedidoService {
     @Transactional
     public Pedido cambiarEstadoServicio(Usuario usuario, UUID pedidoId,
                                         String tipoServicio, String estado) {
+        return cambiarEstadoServicio(usuario, pedidoId, tipoServicio, estado, null);
+    }
+
+    @Transactional
+    public Pedido cambiarEstadoServicio(Usuario usuario, UUID pedidoId,
+                                        String tipoServicio, String estado, String motivo) {
         exigirPersonal(usuario);
         Pedido pedido = cargarPedidoEnContexto(usuario, pedidoId);
         if (tipoServicio != null && !tipoServicio.equals(pedido.getTipoServicio())) {
@@ -551,7 +629,7 @@ public class PedidoService {
         if (nuevoEstado == null) {
             throw new IllegalArgumentException("El estado del pedido no es válido.");
         }
-        return cambiarEstado(usuario, pedido, nuevoEstado);
+        return cambiarEstado(usuario, pedido, nuevoEstado, motivo);
     }
 
     private Pedido cargarPedidoEnContexto(Usuario usuario, UUID pedidoId) {
@@ -565,11 +643,16 @@ public class PedidoService {
         return pedido;
     }
 
-    private Pedido cambiarEstado(Usuario usuario, Pedido pedido, String nuevoEstado) {
+    private Pedido cambiarEstado(Usuario usuario, Pedido pedido, String nuevoEstado, String motivo) {
         String estadoActual = pedido.getEstado();
+        boolean esCancelacion = CatalogoPedidos.ESTADO_CANCELADO.equals(nuevoEstado);
         if (ESTADOS_FINALES.contains(estadoActual)) {
             throw new IllegalArgumentException(
                     "El pedido ya está " + estadoActual + " y no puede actualizarse.");
+        }
+        if (esCancelacion && !CatalogoPedidos.ESTADOS_CANCELABLES.contains(estadoActual)) {
+            throw new IllegalArgumentException(
+                    "El pedido ya está en preparación o más adelante y no se puede cancelar.");
         }
         if (!CatalogoPedidos.TRANSICIONES_PEDIDO
                 .getOrDefault(estadoActual, Set.of()).contains(nuevoEstado)) {
@@ -581,15 +664,48 @@ public class PedidoService {
             throw new IllegalStateException(
                     "El rol de cocina solo puede avanzar pedidos a preparación o listos.");
         }
+        String motivoNormalizado = esCancelacion ? normalizarMotivo(motivo) : null;
 
         pedido.setEstado(nuevoEstado);
+        if (esCancelacion) {
+            pedido.setMotivoCancelacion(motivoNormalizado);
+            pedido.setFechaCancelacion(LocalDateTime.now());
+        }
         Pedido guardado = pedidoRepository.save(pedido);
-        registrarHistorial(guardado, estadoActual, nuevoEstado, usuario);
+        registrarHistorial(guardado, estadoActual, nuevoEstado, usuario, motivoNormalizado);
         if (pedido.getMesaId() != null && ESTADOS_FINALES.contains(nuevoEstado)) {
             mesaService.liberarMesaSiCorresponde(pedido.getMesaId());
         }
         publicarPedido(guardado);
+        avisarCliente(guardado);
         return guardado;
+    }
+
+    /** RF033: el motivo de anulación es obligatorio. */
+    static String normalizarMotivo(String motivo) {
+        String limpio = motivo == null ? "" : motivo.trim().replaceAll("\\s+", " ");
+        if (limpio.length() < CatalogoPedidos.MOTIVO_MIN) {
+            throw new IllegalArgumentException(
+                    "Debe indicar el motivo de la anulación (mínimo "
+                            + CatalogoPedidos.MOTIVO_MIN + " caracteres).");
+        }
+        if (limpio.length() > CatalogoPedidos.MOTIVO_MAX) {
+            throw new IllegalArgumentException(
+                    "El motivo admite hasta " + CatalogoPedidos.MOTIVO_MAX + " caracteres.");
+        }
+        return limpio;
+    }
+
+    private void exigirSucursalAbierta(UUID sucursalId) {
+        if (horarioService != null) {
+            horarioService.exigirAbierta(sucursalId);
+        }
+    }
+
+    private void avisarCliente(Pedido pedido) {
+        if (avisoEstadoPedidoService != null) {
+            avisoEstadoPedidoService.avisarCambio(pedido);
+        }
     }
 
     private boolean esTransicionCocina(String estadoActual, String nuevoEstado) {
@@ -650,10 +766,15 @@ public class PedidoService {
         );
         int cancelados = 0;
         for (Pedido pedido : vencidos) {
+            String motivo = "Vencido: el pedido para llevar no se pagó ni se recogió a tiempo.";
             pedido.setEstado(CatalogoPedidos.ESTADO_CANCELADO);
+            pedido.setMotivoCancelacion(motivo);
+            pedido.setFechaCancelacion(ahora);
             pedidoRepository.save(pedido);
-            registrarHistorial(pedido, CatalogoPedidos.ESTADO_PENDIENTE, CatalogoPedidos.ESTADO_CANCELADO, null);
+            registrarHistorial(pedido, CatalogoPedidos.ESTADO_PENDIENTE,
+                    CatalogoPedidos.ESTADO_CANCELADO, null, motivo);
             publicarPedido(pedido);
+            avisarCliente(pedido);
             cancelados++;
         }
         return cancelados;
@@ -732,10 +853,16 @@ public class PedidoService {
 
     private void registrarHistorial(Pedido pedido, String estadoAnterior, String estadoNuevo,
                                     Usuario usuario) {
+        registrarHistorial(pedido, estadoAnterior, estadoNuevo, usuario, null);
+    }
+
+    private void registrarHistorial(Pedido pedido, String estadoAnterior, String estadoNuevo,
+                                    Usuario usuario, String motivo) {
         HistorialPedido historial = new HistorialPedido();
         historial.setPedidoId(pedido.getId());
         historial.setEstadoAnterior(estadoAnterior);
         historial.setEstadoNuevo(estadoNuevo);
+        historial.setMotivo(motivo);
         if (usuario != null) {
             historial.setUsuarioId(usuario.getId());
             historial.setUsuarioNombre(usuario.getNombre());
@@ -827,6 +954,15 @@ public class PedidoService {
         resumen.put("pagoFechaActualizacion", pedido.getPagoFechaActualizacion());
         resumen.put("fechaCreacion", pedido.getFechaCreacion());
         resumen.put("observaciones", pedido.getObservaciones() != null ? pedido.getObservaciones() : "");
+        resumen.put("correo", pedido.getCorreo() != null ? pedido.getCorreo() : "");
+        resumen.put("cancelable", CatalogoPedidos.ESTADOS_CANCELABLES.contains(pedido.getEstado()));
+        resumen.put("motivoCancelacion", pedido.getMotivoCancelacion() != null
+                ? pedido.getMotivoCancelacion() : "");
+        resumen.put("fechaCancelacion", pedido.getFechaCancelacion());
+        boolean pagado = CatalogoPedidos.PAGO_PAGADO.equals(pedido.getPagoEstado())
+                || CatalogoPedidos.PAGO_PARCIAL.equals(pedido.getPagoEstado());
+        resumen.put("requiereReembolso",
+                CatalogoPedidos.ESTADO_CANCELADO.equals(pedido.getEstado()) && pagado);
         return resumen;
     }
 

@@ -30,6 +30,14 @@ public interface PedidoRepository extends JpaRepository<Pedido, UUID>, JpaSpecif
 
     List<Pedido> findByMesaId(UUID mesaId);
 
+    List<Pedido> findByClienteIdOrderByFechaCreacionDesc(UUID clienteId);
+
+    List<Pedido> findBySucursalIdInAndEstadoAndPagoEstadoInOrderByFechaCreacionDesc(
+            Collection<UUID> sucursalIds, String estado, Collection<String> pagoEstados);
+
+    List<Pedido> findBySucursalIdInAndFechaCreacionBetween(
+            Collection<UUID> sucursalIds, java.time.LocalDateTime desde, java.time.LocalDateTime hasta);
+
     List<Pedido> findByTipoServicioAndEstadoAndFechaVencimientoBefore(
             String tipoServicio, String estado, java.time.LocalDateTime fechaVencimiento);
 }
